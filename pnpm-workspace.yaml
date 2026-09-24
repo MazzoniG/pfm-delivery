@@ -1,0 +1,24 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+# Postinstall scripts are opt-in under pnpm 12. These four need them: Prisma
+# fetches its query engine, esbuild its platform binary, MSW writes its
+# service worker. Anything not listed here does not run scripts.
+#
+# The three `false` entries arrived with testcontainers, which reaches the
+# Docker daemon through ssh2 and protobufjs. Their build scripts compile
+# optional native speedups; the pure-JS fallbacks are what a local Docker
+# socket needs, they run only under vitest, and none of them reaches the
+# runtime image. Left unanswered they fail `pnpm install` outright, which is
+# how they surfaced — as a broken container build, not a broken test run.
+allowBuilds:
+  '@prisma/engines': true
+  cpu-features: false
+  esbuild: true
+  msw: true
+  prisma: true
+  protobufjs: false
+  ssh2: false
+minimumReleaseAgeExclude:
+  - tsx@4.23.15
+  - '@anthropic-ai/sdk@0.128.0'

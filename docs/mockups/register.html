@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accounts and transaction register — mock-up</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+
+    --ink: #17302a;
+    --ink-2: #4e625b;
+    --ink-3: #7c8c86;
+    --paper: #eef3ef;
+    --surface: #ffffff;
+    --rule: #dde7e0;
+    --rule-strong: #b9ccbf;
+    --money-rule: #c9a9a4;
+    --accent: #1f5e4a;
+    --accent-hover: #184c3c;
+    --accent-soft: #e2eee7;
+    --inflow: #1d6e4e;
+    --error: #a4271f;
+    --error-soft: #fbedeb;
+    --lock: #7a6424;
+    --lock-soft: #f6f0dc;
+    --note-bg: #f4f6f9;
+    --note-rule: #aab6c6;
+    --scrim: rgba(23, 48, 42, 0.38);
+
+    --ui: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --num: "Source Serif 4", Georgia, "Times New Roman", serif;
+
+    --r-sm: 4px;
+    --r-md: 8px;
+    --r-lg: 12px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: var(--ui);
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink);
+    background: var(--paper);
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* ---------- spec page frame ---------- */
+  .page { max-width: 1440px; margin: 0 auto; padding: 40px 32px 80px; }
+  .page-head { max-width: 68ch; margin-bottom: 40px; }
+  .page-head h1 {
+    font-family: var(--num); font-weight: 600;
+    font-size: 30px; line-height: 1.2; margin: 0 0 10px;
+  }
+  .page-head p { margin: 0; color: var(--ink-2); }
+
+  .board { margin-bottom: 56px; }
+  .board-head { max-width: 72ch; margin-bottom: 14px; }
+  .board-head h2 { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+  .board-head p { margin: 0; color: var(--ink-2); font-size: 14px; }
+  .board-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 20px;
+    align-items: start;
+  }
+  .stage { overflow-x: auto; border-radius: var(--r-lg); }
+  .notes {
+    background: var(--note-bg);
+    border-left: 3px solid var(--note-rule);
+    border-radius: var(--r-sm);
+    padding: 16px 18px;
+    font-size: 13.5px;
+    color: var(--ink-2);
+  }
+  .notes h3 { font-size: 13.5px; font-weight: 700; color: var(--ink); margin: 0 0 10px; }
+  .notes ol { margin: 0; padding: 0; list-style: none; counter-reset: n; }
+  .notes li { counter-increment: n; position: relative; padding-left: 28px; margin-bottom: 10px; }
+  .notes li:last-child { margin-bottom: 0; }
+  .notes li::before {
+    content: counter(n);
+    position: absolute; left: 0; top: 1px;
+    width: 19px; height: 19px; border-radius: 50%;
+    background: var(--note-rule); color: #fff;
+    font-size: 11px; font-weight: 700; line-height: 19px; text-align: center;
+  }
+  .notes code { font-size: 12.5px; background: #e6eaf0; padding: 0 4px; border-radius: 3px; }
+  .pin {
+    display: inline-block; vertical-align: middle;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: var(--note-rule); color: #fff;
+    font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center;
+    margin-left: 6px; flex: none;
+  }
+
+  /* ---------- app shell ---------- */
+  .app {
+    min-width: 980px;
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    background: var(--surface);
+    border: 1px solid var(--rule-strong);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+  }
+  .side {
+    background: #f7faf8;
+    border-right: 1px solid var(--rule);
+    padding: 20px 14px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .brand { font-family: var(--num); font-size: 20px; font-weight: 600; padding: 0 8px; }
+  .side-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px;
+  }
+  .side-head h2 { font-size: 13px; font-weight: 700; margin: 0; color: var(--ink-2); }
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: var(--r-sm);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+  }
+  .icon-btn:hover { background: var(--accent-soft); }
+  .acct-group { display: flex; flex-direction: column; gap: 2px; }
+  .acct-group h3 { font-size: 12.5px; font-weight: 600; color: var(--ink-3); margin: 0 0 4px; padding: 0 8px; }
+  .acct {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px; border-radius: var(--r-sm);
+    font-size: 14.5px; text-align: left; background: none; border: 0; width: 100%;
+  }
+  .acct:hover { background: var(--accent-soft); }
+  .acct[aria-current="page"] { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 600; }
+
+  .main { padding: 22px 26px 26px; min-width: 0; }
+  .url {
+    font-size: 12.5px; color: var(--ink-2);
+    background: var(--note-bg); border: 1px dashed var(--note-rule);
+    border-radius: var(--r-sm); padding: 5px 10px; margin-bottom: 18px;
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  }
+  .url b { color: var(--ink); font-weight: 600; }
+  .main-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+    margin-bottom: 16px;
+  }
+  .main-head h1 { font-family: var(--num); font-size: 26px; font-weight: 600; margin: 0; line-height: 1.2; }
+  .main-head .sub { color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+  .balance-slot {
+    min-width: 150px; min-height: 44px;
+    border: 1px dashed var(--note-rule); border-radius: var(--r-sm);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-3); font-size: 12px; padding: 4px 10px; text-align: center;
+  }
+  .head-right { display: flex; align-items: center; gap: 10px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 36px; padding: 0 14px; border-radius: var(--r-md);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+    font-size: 14px; font-weight: 600; white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent-soft); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+
+  .filters { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .field-inline {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 12px; border-radius: var(--r-md);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+    font-size: 14px; color: var(--ink);
+  }
+  .field-inline.search { min-width: 240px; color: var(--ink-3); }
+
+  /* ---------- the ledger ---------- */
+  .ledger { width: 100%; border-collapse: collapse; }
+  .ledger th {
+    text-align: left; font-size: 12.5px; font-weight: 600; color: var(--ink-3);
+    padding: 8px 10px; border-bottom: 1px solid var(--rule-strong);
+  }
+  .ledger td {
+    padding: 11px 10px; border-bottom: 1px solid var(--rule);
+    font-size: 14.5px; vertical-align: middle;
+  }
+  .ledger .c-day { width: 56px; font-family: var(--num); font-size: 16px; color: var(--ink-2); font-variant-numeric: tabular-nums lining-nums; }
+  .ledger .c-status { width: 34px; text-align: center; }
+  .ledger .c-amt {
+    width: 150px; text-align: right;
+    font-family: var(--num); font-size: 16px;
+    font-variant-numeric: tabular-nums lining-nums;
+    border-left: 3px double var(--money-rule);
+  }
+  .ledger th.c-amt, .ledger th.c-day { font-family: var(--ui); font-size: 12.5px; color: var(--ink-3); }
+  .amt-in { color: var(--inflow); }
+  .month td {
+    padding: 22px 10px 8px;
+    font-family: var(--num); font-size: 17px; font-weight: 600;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  .month .month-note { font-family: var(--ui); font-size: 12.5px; font-weight: 500; color: var(--lock); margin-left: 10px; }
+  .payee { font-weight: 500; }
+  .cat { color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+  .split-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--accent-soft); color: var(--accent);
+    border: 0; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600;
+  }
+  .split-btn:hover { background: #d2e6da; }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 600;
+    border-radius: 999px; padding: 1px 8px; margin-left: 8px; vertical-align: 1px;
+  }
+  .badge-correction { background: var(--accent-soft); color: var(--accent); }
+  .badge-reversed { background: var(--lock-soft); color: var(--lock); }
+  .badge a { color: inherit; }
+  tr.reconciled td { background: #fbfcf9; }
+  .lock { color: var(--lock); }
+
+  .more { display: flex; justify-content: center; padding-top: 18px; }
+
+  /* ---------- modal + drawer staging ---------- */
+  .scrim {
+    min-width: 760px; background: var(--scrim); border-radius: var(--r-lg);
+    padding: 40px; display: flex; justify-content: center; align-items: flex-start;
+  }
+  .scrim.right { justify-content: flex-end; padding: 0; min-height: 520px; }
+  .dialog {
+    width: 520px; background: var(--surface);
+    border-radius: var(--r-lg); box-shadow: 0 18px 50px rgba(23, 48, 42, 0.28);
+  }
+  .dialog-head { padding: 20px 24px 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .dialog-head h2 { font-family: var(--num); font-size: 21px; font-weight: 600; margin: 0; line-height: 1.25; }
+  .dialog-body { padding: 16px 24px; }
+  .dialog-body p { margin: 0 0 14px; color: var(--ink-2); max-width: 60ch; }
+  .dialog-foot {
+    padding: 14px 24px 20px; display: flex; justify-content: flex-end; gap: 10px;
+    border-top: 1px solid var(--rule); margin-top: 4px;
+  }
+
+  .tabs {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    background: var(--paper); border-radius: var(--r-md); padding: 3px; margin-bottom: 18px;
+  }
+  .tab { border: 0; background: none; border-radius: 6px; height: 34px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+  .tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(23, 48, 42, 0.14); }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 14px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .field { position: relative; }
+  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+  .field .hint { font-size: 12.5px; color: var(--ink-3); margin-top: 4px; }
+  .input {
+    height: 38px; width: 100%; border-radius: var(--r-md);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+    padding: 0 12px; display: flex; align-items: center; justify-content: space-between;
+    font-size: 14.5px;
+  }
+  .input.money { font-family: var(--num); font-size: 16px; font-variant-numeric: tabular-nums lining-nums; justify-content: flex-start; gap: 6px; }
+  .input.open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .input .placeholder { color: var(--ink-3); }
+  .field.invalid .input { border-color: var(--error); }
+  .field .error { font-size: 12.5px; color: var(--error); margin-top: 4px; }
+  .listbox {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 2;
+    margin-top: 6px; border: 1px solid var(--rule-strong); border-radius: var(--r-md);
+    background: var(--surface); padding: 6px; box-shadow: 0 10px 30px rgba(23, 48, 42, 0.12);
+  }
+  .listbox h4 { font-size: 12px; font-weight: 600; color: var(--ink-3); margin: 6px 8px 4px; }
+  .option { padding: 6px 8px; border-radius: var(--r-sm); font-size: 14px; }
+  .option[aria-selected="true"] { background: var(--accent-soft); font-weight: 600; }
+
+  .callout {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: var(--lock-soft); border-radius: var(--r-md);
+    padding: 12px 14px; margin-bottom: 16px; font-size: 14px; color: #5a4a1a;
+  }
+
+  .drawer {
+    width: 420px; background: var(--surface); min-height: 520px;
+    border-radius: 0 var(--r-lg) var(--r-lg) 0; box-shadow: -18px 0 50px rgba(23, 48, 42, 0.22);
+    display: flex; flex-direction: column;
+  }
+  .drawer-head { padding: 22px 24px 16px; border-bottom: 1px solid var(--rule); }
+  .drawer-head h2 { font-family: var(--num); font-size: 21px; font-weight: 600; margin: 0 0 2px; }
+  .drawer-head .sub { color: var(--ink-2); font-size: 14px; }
+  .drawer-body { padding: 18px 24px; }
+  .drawer-body h3 { font-size: 13px; font-weight: 700; color: var(--ink-2); margin: 0 0 8px; }
+  .lines { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
+  .lines td { padding: 10px 0; border-bottom: 1px solid var(--rule); font-size: 14.5px; }
+  .lines .c-amt { text-align: right; font-family: var(--num); font-size: 16px; font-variant-numeric: tabular-nums lining-nums; }
+
+  /* ---------- states ---------- */
+  .states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .state {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    border-radius: var(--r-lg); padding: 18px 20px; min-height: 280px;
+    display: flex; flex-direction: column;
+  }
+  .state > h3 { font-size: 13px; font-weight: 700; color: var(--ink-3); margin: 0 0 14px; }
+  .state-center { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 10px; }
+  .state-center h4 { font-family: var(--num); font-size: 19px; font-weight: 600; margin: 0; }
+  .state-center p { margin: 0; color: var(--ink-2); font-size: 14px; max-width: 42ch; }
+  .problem {
+    font-size: 13.5px; background: var(--error-soft); color: var(--error);
+    border-radius: var(--r-sm); padding: 8px 10px; width: 100%;
+  }
+  .skeleton { border-bottom: 1px solid var(--rule); padding: 14px 0; display: grid; grid-template-columns: 32px 1fr 70px; gap: 14px; }
+  .bar { height: 11px; border-radius: 6px; background: linear-gradient(90deg, #e7eee9 25%, #f2f6f3 50%, #e7eee9 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+  .bar.short { width: 60%; }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) { .bar { animation: none; } }
+
+  @media (max-width: 1100px) {
+    .board-body { grid-template-columns: minmax(0, 1fr); }
+    .states { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .page { padding: 24px 16px 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="page-head">
+    <h1>Accounts and transaction register</h1>
+    <p>Target layout and states for the accounts sidebar and transaction register. Numbered pins on each screen match the notes beside it; the notes are the rules the screen has to follow.</p>
+  </header>
+
+  <!-- ===================== A. Register ===================== -->
+  <section class="board" aria-labelledby="b-register">
+    <div class="board-head">
+      <h2 id="b-register">Register, default view</h2>
+      <p>Everyday Checking selected, filtered to all time. Shows a split, a transfer, a reconciled month, and a correction pair.</p>
+    </div>
+    <div class="board-body">
+      <div class="stage">
+        <div class="app">
+          <nav class="side" aria-label="Accounts">
+            <div class="brand">Ledger</div>
+            <div class="side-head">
+              <h2>Accounts <span class="pin" aria-hidden="true">2</span></h2>
+              <button class="icon-btn" aria-label="Add account">
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="acct-group">
+              <h3>Banking</h3>
+              <button class="acct" aria-current="page">Everyday Checking</button>
+              <button class="acct">High-Yield Savings</button>
+            </div>
+            <div class="acct-group">
+              <h3>Credit</h3>
+              <button class="acct">Visa Credit Card</button>
+            </div>
+          </nav>
+
+          <main class="main">
+            <div class="url" aria-label="Current URL">
+              <span>/transactions?<b>account</b>=everyday-checking&amp;<b>range</b>=all&amp;<b>q</b>=</span><span class="pin" aria-hidden="true">1</span>
+            </div>
+
+            <div class="main-head">
+              <div>
+                <h1>Everyday Checking</h1>
+                <div class="sub">Checking account</div>
+              </div>
+              <div class="head-right">
+                <div class="balance-slot">Balance slot, filled later <span class="pin" aria-hidden="true">2</span></div>
+                <button class="btn btn-primary">
+                  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  Add transaction
+                </button>
+              </div>
+            </div>
+
+            <div class="filters">
+              <div class="field-inline">All time
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+              </div>
+              <div class="field-inline search">
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m9.5 9.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                Search payee
+              </div>
+            </div>
+
+            <table class="ledger">
+              <caption class="sr-only">Transactions in Everyday Checking</caption>
+              <thead>
+                <tr>
+                  <th class="c-day" scope="col">Day</th>
+                  <th scope="col">Payee</th>
+                  <th scope="col">Category <span class="pin" aria-hidden="true">4</span></th>
+                  <th class="c-status" scope="col"><span class="sr-only">Status</span></th>
+                  <th class="c-amt" scope="col">Amount, USD <span class="pin" aria-hidden="true">5</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="month"><td colspan="5">September 2026 <span class="pin" aria-hidden="true">3</span></td></tr>
+
+                <tr>
+                  <td class="c-day">20</td>
+                  <td><span class="payee">Riverside Café</span><span class="badge badge-correction">Correction <span class="pin" aria-hidden="true">6</span></span></td>
+                  <td><span class="cat">Dining</span></td>
+                  <td class="c-status"></td>
+                  <td class="c-amt">−24.00</td>
+                </tr>
+                <tr>
+                  <td class="c-day">20</td>
+                  <td><span class="payee">Riverside Café</span><span class="badge badge-reversed"><a href="#aug-14">Reversal of Aug 14</a></span></td>
+                  <td><span class="cat">Groceries</span></td>
+                  <td class="c-status"></td>
+                  <td class="c-amt amt-in">+24.00</td>
+                </tr>
+                <tr>
+                  <td class="c-day">19</td>
+                  <td><span class="payee">Corner Market</span></td>
+                  <td><span class="cat">Groceries</span></td>
+                  <td class="c-status"></td>
+                  <td class="c-amt">−54.20</td>
+                </tr>
+                <tr>
+                  <td class="c-day">18</td>
+                  <td><span class="payee">Maple Street Hardware</span></td>
+                  <td>
+                    <button class="split-btn" aria-haspopup="dialog">
+                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2v3.5h8M2 5.5V10h8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                      Split
+                    </button>
+                  </td>
+                  <td class="c-status"></td>
+                  <td class="c-amt">−230.00</td>
+                </tr>
+                <tr>
+                  <td class="c-day">15</td>
+                  <td><span class="payee">Transfer</span></td>
+                  <td>
+                    <span class="cat">
+                      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 5h9m0 0-2.5-2.5M11 5 8.5 7.5M12 9H3m0 0 2.5-2.5M3 9l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      High-Yield Savings
+                    </span>
+                  </td>
+                  <td class="c-status"></td>
+                  <td class="c-amt">−500.00</td>
+                </tr>
+                <tr>
+                  <td class="c-day">12</td>
+                  <td><span class="payee">Acme Corp Payroll</span></td>
+                  <td><span class="cat">Salary</span></td>
+                  <td class="c-status"></td>
+                  <td class="c-amt amt-in">+2,400.00</td>
+                </tr>
+                <tr>
+                  <td class="c-day">03</td>
+                  <td><span class="payee">City Power &amp; Light</span></td>
+                  <td><span class="cat">Utilities</span></td>
+                  <td class="c-status"></td>
+                  <td class="c-amt">−88.14</td>
+                </tr>
+
+                <tr class="month"><td colspan="5">August 2026 <span class="month-note">Reconciled Sep 19</span> <span class="pin" aria-hidden="true">6</span></td></tr>
+
+                <tr class="reconciled">
+                  <td class="c-day">28</td>
+                  <td><span class="payee">Northside Pharmacy</span></td>
+                  <td><span class="cat">Health</span></td>
+                  <td class="c-status"><svg class="lock" width="14" height="14" viewBox="0 0 14 14" role="img" aria-label="Reconciled"><rect x="2.5" y="6" width="9" height="6.5" rx="1.2" fill="currentColor"/><path d="M4.5 6V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></td>
+                  <td class="c-amt">−32.10</td>
+                </tr>
+                <tr class="reconciled" id="aug-14">
+                  <td class="c-day">14</td>
+                  <td><span class="payee">Riverside Café</span><span class="badge badge-reversed">Reversed Sep 20</span></td>
+                  <td><span class="cat">Groceries</span></td>
+                  <td class="c-status"><svg class="lock" width="14" height="14" viewBox="0 0 14 14" role="img" aria-label="Reconciled"><rect x="2.5" y="6" width="9" height="6.5" rx="1.2" fill="currentColor"/><path d="M4.5 6V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></td>
+                  <td class="c-amt">−24.00</td>
+                </tr>
+                <tr class="reconciled">
+                  <td class="c-day">01</td>
+                  <td><span class="payee">Harbor Apartments</span></td>
+                  <td><span class="cat">Rent</span></td>
+                  <td class="c-status"><svg class="lock" width="14" height="14" viewBox="0 0 14 14" role="img" aria-label="Reconciled"><rect x="2.5" y="6" width="9" height="6.5" rx="1.2" fill="currentColor"/><path d="M4.5 6V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></td>
+                  <td class="c-amt">−1,650.00</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="more">
+              <button class="btn">Load older transactions <span class="pin" aria-hidden="true">7</span></button>
+            </div>
+          </main>
+        </div>
+      </div>
+
+      <aside class="notes" aria-label="Notes for the register">
+        <h3>Rules for this screen</h3>
+        <ol>
+          <li>The URL is the state. Selected account, date range and search live in search params, and the query key derives from them. Nothing here goes in Zustand.</li>
+          <li>The sidebar lists asset and liability accounts only, grouped by kind. No balances yet: leave the header slot empty rather than stubbing a number. Archived accounts are hidden.</li>
+          <li>Month rows are presentation only, grouped client-side from <code>occurredOn</code>. Days are shown without the month because the group carries it.</li>
+          <li>Category shows the counter-side of the entry. One counter line shows its name; a transfer shows the other account; more than one shows <b>Split</b>, which opens the split detail.</li>
+          <li>Amounts render exactly as the API returns them, through the shared money formatter. No arithmetic, no sign flipping, no <code>Math.abs</code>, no <code>parseFloat</code>.</li>
+          <li>A lock marks a reconciled row. A correction appears as a reversal plus a replacement dated the day it was made; each badge links to the other and to the original.</li>
+          <li>Pagination is keyset. The button passes the cursor from the last response. No page numbers, no totals.</li>
+          <li>No user avatar, switcher or owner selector anywhere. Identity belongs to the server.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== B. Add transaction ===================== -->
+  <section class="board" aria-labelledby="b-add">
+    <div class="board-head">
+      <h2 id="b-add">Add transaction</h2>
+      <p>Opened from the header button. Money out tab selected, with the account picker open and one validation error showing.</p>
+    </div>
+    <div class="board-body">
+      <div class="stage">
+        <div class="scrim">
+          <div class="dialog" role="dialog" aria-labelledby="add-title">
+            <div class="dialog-head">
+              <h2 id="add-title">Add transaction</h2>
+              <button class="icon-btn" aria-label="Close">
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m2 2 8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="dialog-body">
+              <div class="tabs" role="tablist">
+                <button class="tab" role="tab" aria-selected="true">Money out</button>
+                <button class="tab" role="tab" aria-selected="false">Money in</button>
+                <button class="tab" role="tab" aria-selected="false">Transfer <span class="pin" aria-hidden="true">1</span></button>
+              </div>
+
+              <div class="form-grid">
+                <div class="field">
+                  <label>Date</label>
+                  <div class="input">Sep 21, 2026</div>
+                </div>
+                <div class="field invalid">
+                  <label>Amount <span class="pin" aria-hidden="true">4</span></label>
+                  <div class="input money"><span class="placeholder">0.00</span></div>
+                  <div class="error"><span class="pin" aria-hidden="true" style="margin:0 6px 0 0">3</span>Enter an amount greater than zero.</div>
+                </div>
+                <div class="field full">
+                  <label>Payee</label>
+                  <div class="input">Corner Market</div>
+                </div>
+                <div class="field">
+                  <label>From account <span class="pin" aria-hidden="true">2</span></label>
+                  <div class="input open">Everyday Checking
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 7.5 6 4.5 9 7.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                  </div>
+                  <div class="listbox" role="listbox" aria-label="Accounts">
+                    <h4>Banking</h4>
+                    <div class="option" role="option" aria-selected="true">Everyday Checking</div>
+                    <div class="option" role="option" aria-selected="false">High-Yield Savings</div>
+                    <h4>Credit</h4>
+                    <div class="option" role="option" aria-selected="false">Visa Credit Card</div>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Category</label>
+                  <div class="input">Groceries
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                  </div>
+                  <div class="hint">Expense categories only on this tab.</div>
+                </div>
+                <div class="field full">
+                  <label>Memo <span style="font-weight:400;color:var(--ink-3)">(optional)</span></label>
+                  <div class="input"><span class="placeholder">Add a note</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="dialog-foot">
+              <button class="btn">Cancel</button>
+              <button class="btn btn-primary">Add transaction <span class="pin" aria-hidden="true">5</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="notes" aria-label="Notes for add transaction">
+        <h3>Rules for this dialog</h3>
+        <ol>
+          <li>Money out and Money in submit the simple form (account, category, amount). Transfer submits two lines between two accounts, from and to. There is no transfer endpoint; it is an ordinary entry.</li>
+          <li>The account picker shows asset and liability accounts only, grouped by kind. The category picker shows expense categories on Money out and income categories on Money in. An income or expense row never appears in an account picker.</li>
+          <li>React Hook Form with <code>zodResolver</code> over the contract schema. Errors render inline under the field, worded as what to do.</li>
+          <li>The amount is typed as a positive decimal. The tab decides the sign, and the client converts to a signed minor-units string by string manipulation, never through a JS number.</li>
+          <li>The payload never contains an owner id.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== C. Reconciled edit ===================== -->
+  <section class="board" aria-labelledby="b-locked">
+    <div class="board-head">
+      <h2 id="b-locked">Editing a reconciled transaction</h2>
+      <p>What appears when an edit or delete comes back 409 because the entry is locked.</p>
+    </div>
+    <div class="board-body">
+      <div class="stage">
+        <div class="scrim">
+          <div class="dialog" role="dialog" aria-labelledby="locked-title">
+            <div class="dialog-head">
+              <h2 id="locked-title">This transaction is reconciled</h2>
+              <button class="icon-btn" aria-label="Close">
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m2 2 8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="dialog-body">
+              <div class="callout">
+                <svg class="lock" width="16" height="16" viewBox="0 0 14 14" aria-hidden="true" style="flex:none;margin-top:2px"><rect x="2.5" y="6" width="9" height="6.5" rx="1.2" fill="currentColor"/><path d="M4.5 6V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Riverside Café on Aug 14 was reconciled on Sep 19 and can't be changed directly. <span class="pin" aria-hidden="true">1</span></span>
+              </div>
+              <p>Post a correction instead. The original stays as reconciled, and today gets two entries: one that reverses it and your corrected version.</p>
+              <div class="form-grid">
+                <div class="field">
+                  <label>Category <span class="pin" aria-hidden="true">3</span></label>
+                  <div class="input">Dining
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Amount</label>
+                  <div class="input money">24.00</div>
+                </div>
+              </div>
+            </div>
+            <div class="dialog-foot">
+              <button class="btn">Cancel</button>
+              <button class="btn btn-primary">Post correction <span class="pin" aria-hidden="true">2</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="notes" aria-label="Notes for reconciled edit">
+        <h3>Rules for this dialog</h3>
+        <ol>
+          <li>Triggered by the 409 <code>problem+json</code> response. The reconciled date comes from <code>lockedAt</code> in that body. Never a toast, never a stack trace.</li>
+          <li>Submits to the correction endpoint. On success the register shows the reversal and replacement dated today, and the original gets its Reversed badge (see the register screen).</li>
+          <li>The form is prefilled from the original entry, so correcting a category is a one-field change.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== D. Split detail ===================== -->
+  <section class="board" aria-labelledby="b-split">
+    <div class="board-head">
+      <h2 id="b-split">Split detail</h2>
+      <p>Opened from a Split badge in the register. Read-only in this version.</p>
+    </div>
+    <div class="board-body">
+      <div class="stage">
+        <div class="scrim right">
+          <aside class="drawer" role="dialog" aria-labelledby="split-title">
+            <div class="drawer-head">
+              <h2 id="split-title">Maple Street Hardware</h2>
+              <div class="sub">Sep 18, 2026</div>
+            </div>
+            <div class="drawer-body">
+              <h3>Paid from</h3>
+              <table class="lines">
+                <tr><td>Everyday Checking</td><td class="c-amt">−230.00</td></tr>
+              </table>
+              <h3>Split across <span class="pin" aria-hidden="true">1</span></h3>
+              <table class="lines">
+                <tr><td>Home Improvement</td><td class="c-amt">+200.00</td></tr>
+                <tr><td>Household</td><td class="c-amt">+30.00</td></tr>
+              </table>
+              <button class="btn">Close</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      <aside class="notes" aria-label="Notes for split detail">
+        <h3>Rules for this panel</h3>
+        <ol>
+          <li>Lines render as returned, through the same formatter as the register, signs included. There is no computed total row: summing would be money arithmetic in the browser, and the bank line already states the total. No edit controls in this version; editing arrives with project apportionment.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== E. States ===================== -->
+  <section class="board" aria-labelledby="b-states">
+    <div class="board-head">
+      <h2 id="b-states">Empty, loading and error</h2>
+      <p>The register body in its three non-happy states. Header and filters stay in place in all three.</p>
+    </div>
+    <div class="board-body">
+      <div class="states">
+        <div class="state">
+          <h3>Empty <span class="pin" aria-hidden="true">1</span></h3>
+          <div class="state-center">
+            <h4>No transactions yet</h4>
+            <p>Add the first one to start this account's register.</p>
+            <button class="btn btn-primary">Add transaction</button>
+          </div>
+        </div>
+        <div class="state" aria-busy="true">
+          <h3>Loading <span class="pin" aria-hidden="true">2</span></h3>
+          <div>
+            <div class="skeleton"><div class="bar"></div><div class="bar short"></div><div class="bar"></div></div>
+            <div class="skeleton"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+            <div class="skeleton"><div class="bar"></div><div class="bar short"></div><div class="bar"></div></div>
+            <div class="skeleton"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+          </div>
+        </div>
+        <div class="state">
+          <h3>Error <span class="pin" aria-hidden="true">3</span></h3>
+          <div class="state-center">
+            <h4>Transactions didn't load</h4>
+            <div class="problem" role="alert">This account was not found. It may have been archived.</div>
+            <button class="btn">Try again</button>
+          </div>
+        </div>
+      </div>
+
+      <aside class="notes" aria-label="Notes for states">
+        <h3>Rules for these states</h3>
+        <ol>
+          <li>Empty is an invitation to act. Its button is the same action, with the same name, as the header button.</li>
+          <li>Loading keeps the table's row geometry so nothing jumps when data arrives. Shimmer stops under reduced motion.</li>
+          <li>Error shows the <code>detail</code> from the <code>problem+json</code> body as written. The heading is ours; the explanation is the server's.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

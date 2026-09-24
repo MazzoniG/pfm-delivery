@@ -1,0 +1,1791 @@
+openapi: 3.1.0
+
+info:
+  title: Personal Finance Manager API
+  version: 1.0.0
+  description: |
+    Hand-written. Generation from the Zod schemas in `packages/contracts` is the
+    intended approach and was cut — see `docs/ARCHITECTURE.md` §Scope. The consequence is
+    that this file can drift from the code, so it is written against the routers
+    actually mounted in `apps/api/src/app.ts`, not against the contract package.
+
+    Two conventions run through every path here.
+
+    **Money is a string.** Every `*Minor` field is signed minor units in base 10.
+    JSON numbers are IEEE-754 doubles and a `BIGINT` amount is not safely
+    representable in one, so amounts cross the wire as strings and are parsed to
+    `bigint`.
+
+    **Dates are two different types.** `occurredOn`, `asOf`, `from`, `to`,
+    `dueOn` and friends are calendar dates (`YYYY-MM-DD`) with no timezone.
+    `createdAt`, `lockedAt`, `recordedAt`, `archivedAt` and `reconciledAt` are
+    instants with an offset. They are never interchangeable.
+
+    **Identity.** There is no authentication. A `currentUser` middleware supplies
+    a constant owner id, and every query is scoped by it. There is no header, no
+    token and no parameter that changes which owner a request runs as.
+
+# Stated rather than omitted: no operation requires credentials. See Identity above.
+security: []
+
+servers:
+  - url: /api/v1
+    description: All resource paths. `/health` and `/ready` are also mounted at the root.
+
+tags:
+  - name: ops
+  - name: accounts
+  - name: categories
+  - name: transactions
+  - name: reporting
+  - name: projects
+  - name: insights
+  - name: bills
+
+paths:
+  /health:
+    get:
+      tags: [ops]
+      summary: Liveness. Does not touch the database.
+      responses:
+        '200':
+          description: Process is up.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+
+  /ready:
+    get:
+      tags: [ops]
+      summary: Readiness. Pings the database.
+      responses:
+        '200':
+          description: Database reachable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadyResponse' }
+        '503':
+          description: Database unreachable. Same body shape, `status` is `not_ready`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadyResponse' }
+
+  /accounts:
+    get:
+      tags: [accounts]
+      summary: This owner's asset and liability accounts.
+      description: |
+        Always filtered to `asset | liability`. Income and expense rows of
+        `ledger_accounts` are categories and are served by `GET /categories`.
+
+        **Live accounts only** — archived ones are not returned, so `archivedAt`
+        is null on every row here. That is what makes archiving work in the UI:
+        `/accounts/balances` *does* return archived accounts, so a client that
+        joins balances to this list drops the archived rows from the visible
+        list while their money stays in `subtotals` and `netWorthMinor`. An
+        archived account's name is therefore not retrievable from this API; by
+        the same design, nothing needs it.
+      responses:
+        '200':
+          description: Live accounts, ordered by kind then name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LedgerAccount' }
+    post:
+      tags: [accounts]
+      summary: Open an account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAccountRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedgerAccount' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '409': { $ref: '#/components/responses/AccountNameTaken' }
+
+  /accounts/balances:
+    get:
+      tags: [reporting]
+      summary: Every account's balance as at a date, with subtotals and net worth.
+      description: |
+        Mounted ahead of `/accounts/{id}`, or Express reads `balances` as an id.
+
+        Three levels of figure, none of them derivable from the others.
+        `netWorthMinor` is the raw signed sum over asset and liability accounts
+        and is never sign-flipped. `subtotals` carry the display sign, so a card
+        with 800 owed subtotals to `800`. Neither is the sum of the visible
+        `accounts` rows, because archived accounts count in both totals while the
+        client hides them.
+      parameters:
+        - $ref: '#/components/parameters/AsOf'
+      responses:
+        '200':
+          description: Balances at the resolved date, which is echoed back.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalancesResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+
+  /accounts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    patch:
+      tags: [accounts]
+      summary: Rename an account.
+      description: |
+        Only the name is patchable. Kind and currency are baked into the sign and
+        meaning of every line already posted, so changing either would rewrite
+        history rather than edit a label.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAccountRequest' }
+      responses:
+        '200':
+          description: Renamed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedgerAccount' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/AccountNameTaken' }
+    delete:
+      tags: [accounts]
+      summary: Archive an account. Accounts are never deleted.
+      description: |
+        Sets `archivedAt`. The account keeps its history and keeps counting in
+        every balance; archiving is a presentation choice, and its money is still
+        real. Archiving an already-archived account is idempotent.
+      responses:
+        '204': { description: Archived. }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /accounts/{id}/balance:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+      - $ref: '#/components/parameters/AsOf'
+    get:
+      tags: [reporting]
+      summary: One account's balance as at a date.
+      description: |
+        `id` must name one of this owner's asset or liability accounts. Another
+        owner's id, a category id and an id that does not exist all answer 404 —
+        a 403 would confirm the row exists.
+      responses:
+        '200':
+          description: Balance at the resolved date.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountBalanceResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /categories:
+    get:
+      tags: [categories]
+      summary: This owner's income and expense categories.
+      description: |
+        Always filtered to `income | expense`. Exactly one level — there is no
+        `parentId` and there never will be.
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string, enum: [income, expense] }
+      responses:
+        '200':
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+
+  /entries:
+    get:
+      tags: [transactions]
+      summary: The register for one account — keyset paginated.
+      description: |
+        A register row is a *projection*: one entry seen from `accountId`'s side,
+        with the counter-side collapsed. One counter line shows itself; more than
+        one collapses to `—Split—`. An entry touching the account on two lines
+        yields two rows.
+
+        Ordered `(occurredOn DESC, id DESC)`. The cursor is that tuple, encoded
+        `YYYY-MM-DD:uuid`, and is re-validated on the way in — a hand-edited
+        cursor is a 400 and never reaches SQL. There is no offset anywhere.
+
+        `projectId` keeps entries with at least one line on that project. Another
+        owner's project matches nothing, so it answers an empty page rather than
+        a 404 that would confirm the project exists.
+      parameters:
+        - name: accountId
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/Uuid' }
+        - name: projectId
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Uuid' }
+        - name: from
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/CalendarDate' }
+        - name: to
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/CalendarDate' }
+        - name: q
+          in: query
+          required: false
+          description: Payee search.
+          schema: { type: string, minLength: 1, maxLength: 120 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          description: The keyset tuple from the previous page's `nextCursor`.
+          schema: { type: string, examples: ['2026-08-31:1f2e3d4c-5b6a-7980-a1b2-c3d4e5f60718'] }
+      responses:
+        '200':
+          description: One page of register rows.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionPage' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [transactions]
+      summary: Post an entry.
+      description: |
+        Two accepted shapes. The **simple** one — `accountId`, `categoryId`,
+        `amountMinor` — is sugar: the category line is the exact negation, and
+        `projectId` lands on the category line, the only side it is meaningful
+        on. The **explicit** one takes `lines` directly, at least two of them.
+
+        Lines must sum to zero. The schema checks it so a split can be rejected
+        in the form; a deferrable constraint trigger in Postgres is the
+        authority, and it is what a client bypassing this API still meets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateEntryRequest' }
+      responses:
+        '201':
+          description: Posted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422':
+          description: |
+            Well-formed but not postable — a line naming an account of the wrong
+            kind, `projectId` or `excludedFromReporting` on a line that is not
+            income or expense, or an account or project id this owner does not
+            have.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+  /entries/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [transactions]
+      summary: One entry with all its lines, raw signed amounts.
+      responses:
+        '200':
+          description: The entry.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [transactions]
+      summary: Edit an unlocked entry.
+      description: |
+        An absent field means "leave it alone", not "set it to null". Supplying
+        `lines` replaces the whole set and they must sum to zero.
+
+        Editable only while `lockedAt` is null. A reconciled entry answers 409
+        and must be changed through `POST /entries/{id}/correction`. The lock is
+        enforced by a `BEFORE UPDATE OR DELETE` trigger, not by this service.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateEntryRequest' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/EntryLocked' }
+        '422':
+          description: A dimension on a line that is not income or expense, or an account or project id this owner does not have.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+    delete:
+      tags: [transactions]
+      summary: Delete an unlocked entry.
+      responses:
+        '204': { description: Deleted. }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/EntryLocked' }
+
+  /entries/{id}/correction:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [transactions]
+      summary: Correct a reconciled entry — reversal plus replacement, one transaction.
+      description: |
+        The only way to change a locked entry. Posts a reversal of the original
+        and a replacement, both **dated today**, in one database transaction.
+        The request carries no date: reaching back into a filed period is the
+        thing locking exists to prevent, so there is no date here for a caller to
+        get wrong and none for the server to silently override.
+
+        Reversals copy `project_id`. All three entries come back, because the
+        client has to show the replacement and re-render the original, which now
+        carries `reversedByEntryId`.
+
+        A correction on an *unlocked* entry is accepted too; locking is what
+        makes it the only route, not what makes it legal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCorrectionRequest' }
+      responses:
+        '201':
+          description: Reversal and replacement posted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CorrectionResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/EntryAlreadyCorrected' }
+        '422':
+          description: A dimension on a replacement line that is not income or expense, or an account or project id this owner does not have.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+  /reports/categories:
+    get:
+      tags: [reporting]
+      summary: Monthly spending by category.
+      description: |
+        Expenses only. One bucket per calendar month in the period, zero months
+        included, so a client never invents a missing month. `totalMinor` is the
+        API's own figure and never the sum of `categories` — the browser adds no
+        money.
+
+        Seen from the category's side of the entry, so spending is positive and a
+        reversal negative: the opposite sign to the same purchase in the
+        register, which looks from the bank account. Both are correct and neither
+        is flipped to match the other.
+
+        Lines with `excludedFromReporting` are absent from every figure here
+        while still counting in balances.
+      parameters:
+        - $ref: '#/components/parameters/PeriodFrom'
+        - $ref: '#/components/parameters/PeriodTo'
+        - name: projectId
+          in: query
+          required: false
+          description: Restricts every figure to lines on this project.
+          schema: { $ref: '#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryReport' }
+        '400':
+          $ref: '#/components/responses/PeriodValidationFailed'
+
+  /reports/categories/{ledgerAccountId}/lines:
+    parameters:
+      - name: ledgerAccountId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+      - $ref: '#/components/parameters/PeriodFrom'
+      - $ref: '#/components/parameters/PeriodTo'
+    get:
+      tags: [reporting]
+      summary: The lines behind one category's total — the drill-down.
+      description: |
+        `ledgerAccountId` must name one of this owner's **expense** categories.
+        Another owner's category, an income category and an account id all answer
+        404, the same as an id that does not exist.
+
+        `accounts` is the entry's asset and liability lines: usually one, none
+        for a reclassification between categories, more than one for a purchase
+        paid from two accounts. Newest first, like the register.
+      responses:
+        '200':
+          description: The lines.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryLines' }
+        '400': { $ref: '#/components/responses/PeriodValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /projects:
+    get:
+      tags: [projects]
+      summary: This owner's projects with their aggregates.
+      description: |
+        The list is a reporting query — every figure on it is an aggregate — so
+        it is served by the reporting module while the writes below live in the
+        projects module.
+
+        Most recent activity first; projects with none follow, newest created
+        first. `netCostMinor` is the raw signed sum of the project's lines with
+        no display sign, so a refund booked to the project as income reduces it.
+        Every figure honours `excludedFromReporting`, so the count and the date
+        span describe the same lines the net cost adds up.
+      responses:
+        '200':
+          description: Projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProjectSummary' }
+    post:
+      tags: [projects]
+      summary: Create a project.
+      description: Names are unique per owner, so a duplicate is a 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProjectRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '409':
+          description: A project of this owner already has that name.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+  /projects/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    patch:
+      tags: [projects]
+      summary: Rename a project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProjectRequest' }
+      responses:
+        '200':
+          description: Renamed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: A project of this owner already has that name.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+    delete:
+      tags: [projects]
+      summary: Delete an unused project.
+      description: |
+        There is no archived state: a project in use cannot be deleted, an unused
+        one can, and nothing asks for a third. The 409 carries
+        `transactionCount` — every entry holding such a line, excluded or not,
+        because it answers what blocks the delete, not what the project costs.
+      responses:
+        '204': { description: Deleted. }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Lines still reference the project.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProjectInUseProblem' }
+
+  /reports/projects/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+      - $ref: '#/components/parameters/PeriodFrom'
+      - $ref: '#/components/parameters/PeriodTo'
+    get:
+      tags: [projects, reporting]
+      summary: One project's report.
+      description: |
+        `months` and `categories` are the category report restricted to this
+        project, so they cover expense lines inside `from`–`to` only, and
+        `categories` totals the whole period rather than one month. `project` and
+        `lines` are the project's whole history. A refund therefore lowers the
+        net cost and appears among the lines, but not in the spending chart.
+
+        `lines` is newest first and capped at 500; `linesTruncated` says the cap
+        was hit, so a short list is never mistaken for the whole project. The
+        figures are unaffected — they are aggregates, not sums of `lines`.
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectReport' }
+        '400': { $ref: '#/components/responses/PeriodValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /insights/settings:
+    get:
+      tags: [insights]
+      summary: Whether semantic grouping is available and consented to.
+      description: |
+        Read before any report is generated, because the switch has to render its
+        own disabled reason. `semanticAvailable` is the server's key;
+        `enabled` is this owner's consent, which is revocable and is what gates
+        every send.
+      responses:
+        '200':
+          description: Settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightsSettings' }
+    put:
+      tags: [insights]
+      summary: Set or revoke consent to send merchant names.
+      description: PUT, not POST — consent is one value with two states, and setting it twice means what setting it once meant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightsSettings' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+
+  /insights/spending-report:
+    post:
+      tags: [insights]
+      summary: Spending grouped by merchant, optionally grouped by meaning.
+      description: |
+        A POST because generating a report is an action with a cost: it is what
+        may call a paid model, and it is what records that names were sent.
+
+        Every figure in the response is a SQL sum. The model never computes
+        money — it receives **merchant names only**, returns groupings of those
+        names, and the amounts are attached afterwards from the deterministic
+        query. If the returned groups do not reconcile to the deterministic
+        total, the answer is discarded.
+
+        `grouping` is what the client asks for, not what it gets. `meaning`
+        degrades to `name` whenever the model is unavailable (`no-key`),
+        unconsented (`not-consented`), failed (`provider-failed`) or
+        unreconcilable (`unreconciled`), and the response says which produced it.
+        A `name` response therefore always carries `fallback`, null when the
+        client asked for `name` in the first place. A `meaning` response always
+        carries `sent` — a semantic report that cannot say what left the process
+        is not shippable.
+
+        With no `ANTHROPIC_API_KEY` set this endpoint still works; it returns the
+        `name` grouping with `fallback: "no-key"`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SpendingReportRequest' }
+      responses:
+        '200':
+          description: The report, in whichever grouping was actually produced.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpendingReport' }
+        '400': { $ref: '#/components/responses/PeriodValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+
+  /recurring:
+    post:
+      tags: [bills]
+      summary: Create a recurring series and expand its occurrences.
+      description: |
+        Four shapes and no more: `one-off`, `weekly`, `biweekly`, `monthly` on a
+        day. There is no generic interval and no RRULE — an open interval field
+        would admit a fifth shape by arithmetic. The rule object is strict: an
+        unknown key is a 400, not a silently stripped one, so
+        `{ frequency: "weekly", dayOfMonth: 5 }` is rejected rather than read as
+        a weekly rule that lost half of what the caller meant.
+
+        `amountMinor` is the signed amount posted to `ledgerAccountId`, with
+        `categoryId` taking its exact negation. A bill is negative whichever side
+        funds it: rent from checking is `-165000`, a gym charge on a credit card
+        is `-3500` because more is owed. That is the net-worth basis the
+        projection reports in, which is why nothing here applies a display sign.
+
+        `firstDueOn` may be backdated by at most 31 days. A schedule describes
+        what is coming, and one anchored years ago would expand into hundreds of
+        occurrences that were never bills — all of them landing in the overdue
+        group, which nothing dismisses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRecurringSeriesRequest' }
+      responses:
+        '201':
+          description: Created. Occurrences are expanded to the projection horizon.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecurringSeries' }
+        '400':
+          description: |
+            Malformed, or a rule that contradicts itself — `endsOn` before
+            `firstDueOn`, a `firstDueOn` that does not fall on the monthly
+            rule's anchor day, an unknown key in `rule`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422':
+          description: |
+            Well-formed but not a schedule — `ledgerAccountId` naming something
+            other than an asset or liability, `categoryId` naming something other
+            than an income or expense category, an unknown id, or a `firstDueOn`
+            backdated more than 31 days.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+  /occurrences/{id}/pay:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [bills]
+      summary: Materialise a scheduled occurrence as a real entry.
+      description: |
+        Paying is the only write on an occurrence, which is why there is no
+        `/occurrences/{id}`.
+
+        Scheduled occurrences are **not** entries: they are in no balance and no
+        report. This is the one thing that moves money, and it posts an ordinary
+        entry through the same path as any other — the link back to the
+        occurrence is what makes it a payment. Setting `materializedEntryId` is
+        also what drops the occurrence out of the projection; nothing else
+        dismisses one.
+
+        All three fields are required and none is defaulted, because all three
+        are prefilled from the occurrence and all three are editable: a bill
+        rarely arrives on exactly its scheduled date for exactly its scheduled
+        amount. `amountMinor` keeps the account-side sign, so paying more than
+        scheduled is a more negative number, not a larger one.
+
+        201 rather than 200: the resource created is the transaction, not the
+        link. Paying twice is a 409 naming the entry that already paid it, so the
+        client can open that transaction instead of posting a second one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayOccurrenceRequest' }
+      responses:
+        '201':
+          description: Paid. Both halves come back.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayOccurrenceResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already paid.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/OccurrencePaidProblem' }
+        '422':
+          description: '`ledgerAccountId` names something other than an asset or liability account, or an id this owner does not have.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+  /projection:
+    get:
+      tags: [bills, reporting]
+      summary: Net worth carried forward over what is scheduled.
+      description: |
+        A reporting query: it reads the ledger and adds what is scheduled.
+
+        Every figure here is net worth on the same basis as
+        `BalancesResponse.netWorthMinor` — the raw signed sum over asset and
+        liability accounts, never sign-flipped. `netWorthMinor` is today's and is
+        the same number the balances panel shows; `projectedNetWorthMinor` is
+        that figure carried to `to`.
+
+        `overdue` is returned and is **not** in `projectedNetWorthMinor`. The
+        projection starts from today's balance, and an occurrence due before
+        today that was never materialised is money that has not moved — adding it
+        would claim a payment that did not happen. It is carried in its own group
+        with its own net, because a forecast that silently drops an unpaid bill
+        is worse than one that flags it.
+
+        `scheduled` is occurrences due between `asOf` and `to` inclusive that
+        carry no `materializedEntryId`. Future-dated *real* entries are in the
+        figures but in neither group: they are transactions, and they belong to
+        the register.
+
+        **This endpoint writes.** Expansion materialises occurrence rows up to
+        the horizon asked for, so it cannot be served from a read replica.
+
+        `to` is required and has no default — one month and six months are both
+        defensible, so the choice is the caller's. A `to` already in the past
+        projects nothing, which is the truthful answer rather than an error.
+      parameters:
+        - name: to
+          in: query
+          required: true
+          description: The horizon. At most 12 months past today, or 400.
+          schema: { $ref: '#/components/schemas/CalendarDate' }
+      responses:
+        '200':
+          description: The projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectionResponse' }
+        '400':
+          description: Malformed `to`, or a horizon more than 12 months out.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+components:
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+
+    AsOf:
+      name: asOf
+      in: query
+      required: false
+      description: |
+        Defaults to the server's UTC date, resolved per request. The web client
+        always sends the user's local date explicitly, so that default only ever
+        applies to other consumers. Future dates are accepted — the balance of a
+        ledger at a future date is well defined. Capping the picker at today is
+        the UI's rule, not the API's.
+      schema: { $ref: '#/components/schemas/CalendarDate' }
+
+    PeriodFrom:
+      name: from
+      in: query
+      required: true
+      schema: { $ref: '#/components/schemas/CalendarDate' }
+
+    PeriodTo:
+      name: to
+      in: query
+      required: true
+      description: On or after `from`, and within 24 months of it.
+      schema: { $ref: '#/components/schemas/CalendarDate' }
+
+  responses:
+    ValidationFailed:
+      description: |
+        Zod rejected the body, query or path; `errors` locates each issue. A body
+        that is not valid JSON is also a 400, typed `malformed-json`, with no
+        `errors`.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+    PayloadTooLarge:
+      description: |
+        The JSON body exceeds the 100kb limit, typed `payload-too-large`.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+    PeriodValidationFailed:
+      description: |
+        Malformed dates, `from` after `to`, or a period longer than 24 months.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+    NotFound:
+      description: |
+        No such resource for this owner. Another owner's id is indistinguishable
+        from one that does not exist, on purpose.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+    AccountNameTaken:
+      description: |
+        Another live account of this owner already has that name. Archived
+        accounts keep theirs without blocking it. Comparison is case-sensitive.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+
+    EntryLocked:
+      description: The entry is reconciled. Post a correction instead.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/LockedEntryProblem' }
+
+    EntryAlreadyCorrected:
+      description: |
+        The entry already has a reversal; an entry is reversed at most once.
+        Enforced by a partial unique index on `reverses_entry_id`, so two
+        concurrent corrections get this too. Correct the replacement instead.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/EntryAlreadyCorrectedProblem' }
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+
+    CalendarDate:
+      type: string
+      format: date
+      description: A calendar date with no timezone. Never a timestamp.
+      examples: ['2026-09-23']
+
+    Timestamp:
+      type: string
+      format: date-time
+      description: An audit instant, with offset. Never a calendar date.
+      examples: ['2026-09-23T14:05:00.000Z']
+
+    MinorUnits:
+      type: string
+      pattern: '^-?\d+$'
+      description: |
+        Signed minor units in base 10, as a string. Debit positive, credit
+        negative; an entry's lines sum to zero. Parse to `bigint`, never to
+        `number`.
+      examples: ['-165000']
+
+    ProblemDetails:
+      type: object
+      description: RFC 9457. Served as `application/problem+json` from one error middleware.
+      required: [type, title, status]
+      properties:
+        type: { type: string, examples: ['https://pfm.local/problems/not-found'] }
+        title: { type: string }
+        status: { type: integer }
+        detail:
+          type: string
+          description: The sentence a client renders as written.
+        instance: { type: string, description: The request URL. }
+        errors:
+          type: array
+          description: Present on validation failures. `path` is dotted.
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path: { type: string }
+              message: { type: string }
+
+    LockedEntryProblem:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          required: [lockedAt, correction]
+          properties:
+            status: { const: 409 }
+            lockedAt:
+              $ref: '#/components/schemas/Timestamp'
+            correction:
+              type: string
+              description: The correction path, so a 409 is not a dead end.
+
+    EntryAlreadyCorrectedProblem:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          required: [reversedByEntryId, reversal]
+          properties:
+            status: { const: 409 }
+            reversedByEntryId:
+              $ref: '#/components/schemas/Uuid'
+            reversal:
+              type: string
+              description: The path of the reversal already posted.
+
+    ProjectInUseProblem:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          required: [transactionCount]
+          properties:
+            status: { const: 409 }
+            transactionCount: { type: integer, minimum: 1 }
+
+    OccurrencePaidProblem:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          required: [materializedEntryId]
+          properties:
+            status: { const: 409 }
+            materializedEntryId: { $ref: '#/components/schemas/Uuid' }
+
+    HealthResponse:
+      type: object
+      required: [status, uptimeSeconds]
+      properties:
+        status: { const: ok }
+        uptimeSeconds: { type: number, minimum: 0 }
+
+    ReadyResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ready, not_ready] }
+        checks:
+          type: object
+          required: [database]
+          properties:
+            database: { type: string, enum: [up, down] }
+
+    LedgerAccount:
+      type: object
+      description: |
+        A row of `ledger_accounts` narrowed to `asset | liability`. The table
+        holds accounts and categories both, discriminated by `kind`; the word
+        "account" in this API only ever means a real financial account.
+      required: [id, name, kind, currency, isSystem, archivedAt, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        kind: { type: string, enum: [asset, liability] }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        isSystem:
+          type: boolean
+          description: Seeded infrastructure — opening balances equity and the like.
+        archivedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+          description: |
+            In the shape, but null on every response this API serves: every
+            endpoint returning a `LedgerAccount` is restricted to live accounts.
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+
+    CreateAccountRequest:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        kind: { type: string, enum: [asset, liability] }
+        currency: { type: string, pattern: '^[A-Z]{3}$', default: USD }
+
+    UpdateAccountRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+
+    Category:
+      type: object
+      description: A row of `ledger_accounts` narrowed to `income | expense`. One level, always.
+      required: [id, name, kind, isSystem, archivedAt, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        kind: { type: string, enum: [income, expense] }
+        isSystem: { type: boolean }
+        archivedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+
+    AccountBalance:
+      type: object
+      required: [ledgerAccountId, kind, archived, balanceMinor]
+      properties:
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        kind: { type: string, enum: [asset, liability] }
+        archived:
+          type: boolean
+          description: |
+            Archived accounts are returned and counted in every total. This lets
+            a client drop them from the list without dropping their money.
+        balanceMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Already carries its display sign. Never flipped again.
+
+    AccountBalanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/AccountBalance'
+        - type: object
+          required: [asOf]
+          properties:
+            asOf: { $ref: '#/components/schemas/CalendarDate' }
+
+    KindSubtotals:
+      type: object
+      description: Keyed by kind rather than a list, so neither level can be missing a group the client then invents a zero for.
+      required: [asset, liability]
+      properties:
+        asset: { $ref: '#/components/schemas/MinorUnits' }
+        liability: { $ref: '#/components/schemas/MinorUnits' }
+
+    BalancesResponse:
+      type: object
+      required: [asOf, accounts, subtotals, netWorthMinor]
+      properties:
+        asOf:
+          allOf: [{ $ref: '#/components/schemas/CalendarDate' }]
+          description: The resolved date, echoed back so the client renders it rather than re-deriving it.
+        accounts:
+          type: array
+          items: { $ref: '#/components/schemas/AccountBalance' }
+        subtotals: { $ref: '#/components/schemas/KindSubtotals' }
+        netWorthMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Raw signed sum over asset and liability accounts. Not the sum of `subtotals`.
+
+    EntryRef:
+      type: object
+      required: [id, occurredOn]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        occurredOn: { $ref: '#/components/schemas/CalendarDate' }
+
+    EntryLine:
+      type: object
+      required:
+        [id, ledgerAccountId, ledgerAccountName, ledgerAccountKind, amountMinor,
+         projectId, excludedFromReporting, reconciledAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        ledgerAccountName: { type: string }
+        ledgerAccountKind:
+          type: string
+          enum: [asset, liability, equity, income, expense]
+        amountMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: |
+            Raw signed minor units exactly as posted — no display sign. These
+            lines can be handed straight back to a create or patch payload.
+        projectId:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+          description: Meaningful only on income and expense lines.
+        excludedFromReporting:
+          type: boolean
+          description: |
+            Meaningful only on income and expense lines. Drops the line from
+            spending and category reports; balances and the projection ignore it,
+            because an excluded transaction still moved real money.
+        reconciledAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+
+    EntryLineInput:
+      type: object
+      required: [ledgerAccountId, amountMinor]
+      properties:
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        amountMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Must not be zero — a zero line carries no money and posts nothing.
+        projectId:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+          default: null
+        excludedFromReporting: { type: boolean, default: false }
+
+    Entry:
+      type: object
+      description: |
+        There is no status field. An entry is reversed when another entry
+        reverses it, so `reversedByEntryId` is read back from that entry rather
+        than stored, and cannot disagree with the correction it describes.
+      required:
+        [id, occurredOn, description, payee, memo, lockedAt, reversesEntryId,
+         replacesEntryId, reversedByEntryId, recordedAt, lines]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        occurredOn: { $ref: '#/components/schemas/CalendarDate' }
+        description: { type: [string, 'null'] }
+        payee: { type: [string, 'null'] }
+        memo: { type: [string, 'null'] }
+        lockedAt:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+          description: Set by reconciling — the only lock trigger. Non-null means PATCH and DELETE answer 409.
+        reversesEntryId:
+          oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
+        replacesEntryId:
+          oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
+        reversedByEntryId:
+          oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
+        recordedAt:
+          allOf: [{ $ref: '#/components/schemas/Timestamp' }]
+          description: |
+            When the entry was recorded, as against when it occurred. Stored and
+            deliberately unqueried — see `docs/DECISIONS.md`.
+        lines:
+          type: array
+          minItems: 2
+          items: { $ref: '#/components/schemas/EntryLine' }
+
+    CreateEntrySimple:
+      type: object
+      required: [occurredOn, accountId, categoryId, amountMinor]
+      properties:
+        occurredOn: { $ref: '#/components/schemas/CalendarDate' }
+        description: { type: [string, 'null'], maxLength: 200, default: null }
+        payee: { type: [string, 'null'], maxLength: 120, default: null }
+        memo: { type: [string, 'null'], maxLength: 500, default: null }
+        accountId: { $ref: '#/components/schemas/Uuid' }
+        categoryId: { $ref: '#/components/schemas/Uuid' }
+        amountMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Signed amount posted to `accountId`. The category line is its exact negation.
+        projectId:
+          oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
+          default: null
+          description: Lands on the category line, the only side it is meaningful on.
+
+    CreateEntryExplicit:
+      type: object
+      required: [occurredOn, lines]
+      properties:
+        occurredOn: { $ref: '#/components/schemas/CalendarDate' }
+        description: { type: [string, 'null'], maxLength: 200, default: null }
+        payee: { type: [string, 'null'], maxLength: 120, default: null }
+        memo: { type: [string, 'null'], maxLength: 500, default: null }
+        lines:
+          type: array
+          minItems: 2
+          description: Must sum to zero.
+          items: { $ref: '#/components/schemas/EntryLineInput' }
+
+    CreateEntryRequest:
+      oneOf:
+        - $ref: '#/components/schemas/CreateEntryExplicit'
+        - $ref: '#/components/schemas/CreateEntrySimple'
+
+    UpdateEntryRequest:
+      type: object
+      minProperties: 1
+      description: An absent field means "leave it alone", not "set it to null".
+      properties:
+        occurredOn: { $ref: '#/components/schemas/CalendarDate' }
+        description: { type: [string, 'null'], maxLength: 200 }
+        payee: { type: [string, 'null'], maxLength: 120 }
+        memo: { type: [string, 'null'], maxLength: 500 }
+        lines:
+          type: array
+          minItems: 2
+          description: Replaces the whole set. Must sum to zero.
+          items: { $ref: '#/components/schemas/EntryLineInput' }
+
+    CorrectionReplacement:
+      description: |
+        The same two shapes as `CreateEntryRequest`, minus `occurredOn` — both
+        halves of a correction are dated today by definition.
+      oneOf:
+        - type: object
+          required: [lines]
+          properties:
+            description: { type: [string, 'null'], maxLength: 200, default: null }
+            payee: { type: [string, 'null'], maxLength: 120, default: null }
+            memo: { type: [string, 'null'], maxLength: 500, default: null }
+            lines:
+              type: array
+              minItems: 2
+              items: { $ref: '#/components/schemas/EntryLineInput' }
+        - type: object
+          required: [accountId, categoryId, amountMinor]
+          properties:
+            description: { type: [string, 'null'], maxLength: 200, default: null }
+            payee: { type: [string, 'null'], maxLength: 120, default: null }
+            memo: { type: [string, 'null'], maxLength: 500, default: null }
+            accountId: { $ref: '#/components/schemas/Uuid' }
+            categoryId: { $ref: '#/components/schemas/Uuid' }
+            amountMinor: { $ref: '#/components/schemas/MinorUnits' }
+            projectId:
+              oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
+              default: null
+
+    CreateCorrectionRequest:
+      type: object
+      required: [replacement]
+      properties:
+        replacement: { $ref: '#/components/schemas/CorrectionReplacement' }
+
+    CorrectionResponse:
+      type: object
+      required: [original, reversal, replacement]
+      properties:
+        original:
+          allOf: [{ $ref: '#/components/schemas/Entry' }]
+          description: Re-read, so it now carries `reversedByEntryId`.
+        reversal: { $ref: '#/components/schemas/Entry' }
+        replacement: { $ref: '#/components/schemas/Entry' }
+
+    RowCounterparty:
+      description: |
+        The other side of the entry, seen from the register's account. One line
+        shows itself; more than one collapses to `—Split—`.
+      oneOf:
+        - type: object
+          required: [kind, ledgerAccountId, name, ledgerAccountKind, projectId, excludedFromReporting]
+          properties:
+            kind: { const: single }
+            ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+            name: { type: string }
+            ledgerAccountKind:
+              type: string
+              enum: [asset, liability, equity, income, expense]
+            projectId:
+              oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
+            excludedFromReporting: { type: boolean }
+        - type: object
+          required: [kind]
+          properties:
+            kind: { const: split }
+
+    TransactionRowView:
+      type: object
+      required:
+        [entryId, lineId, occurredOn, payee, description, amountMinor, lockedAt,
+         reconciledAt, counterparty, reverses, reversedBy, replaces]
+      properties:
+        entryId: { $ref: '#/components/schemas/Uuid' }
+        lineId:
+          allOf: [{ $ref: '#/components/schemas/Uuid' }]
+          description: The account-side line this row projects. Two rows of one entry differ here.
+        occurredOn: { $ref: '#/components/schemas/CalendarDate' }
+        payee: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        amountMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Already carries its display sign. Nothing downstream flips it again.
+        lockedAt:
+          oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }]
+        reconciledAt:
+          oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }]
+        counterparty: { $ref: '#/components/schemas/RowCounterparty' }
+        reverses:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+        reversedBy:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+        replaces:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+        projectShareMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: |
+            Present only under a project filter: the raw signed sum of this
+            entry's lines assigned to the project, so a 230.00 split carrying
+            200.00 of it reads `20000` beside the account's `-23000`. Optional
+            rather than nullable, because outside the filter the share does not
+            exist — absence says that, where null would claim a missing value.
+
+    TransactionPage:
+      type: object
+      required: [data, nextCursor]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/TransactionRowView' }
+        nextCursor:
+          type: [string, 'null']
+          description: Null on the last page.
+        projectEntriesInOtherAccounts:
+          type: integer
+          minimum: 0
+          description: |
+            Present only under a project filter: the project's entries with no
+            line on this account, which an account-scoped register cannot show.
+            Follows `from`/`to` but not the payee search or the cursor, so it
+            describes the same period as the rows beside it and is the same on
+            every page of one listing.
+
+    CategoryTotal:
+      type: object
+      required: [ledgerAccountId, name, totalMinor, includesCorrection]
+      properties:
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string }
+        totalMinor: { $ref: '#/components/schemas/MinorUnits' }
+        includesCorrection:
+          type: boolean
+          description: Some entry behind this figure is a reversal or a replacement.
+
+    MonthSpending:
+      type: object
+      required: [month, totalMinor, categories]
+      properties:
+        month: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', examples: ['2026-09'] }
+        totalMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: The API's figure, not the sum of `categories`.
+        categories:
+          type: array
+          description: Largest first; a negative one sorts last.
+          items: { $ref: '#/components/schemas/CategoryTotal' }
+
+    CategoryReport:
+      type: object
+      required: [from, to, months]
+      properties:
+        from: { $ref: '#/components/schemas/CalendarDate' }
+        to: { $ref: '#/components/schemas/CalendarDate' }
+        months:
+          type: array
+          description: One per calendar month in the period, zero months included.
+          items: { $ref: '#/components/schemas/MonthSpending' }
+
+    FundingAccount:
+      type: object
+      required: [ledgerAccountId, name]
+      properties:
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string }
+
+    CategoryLine:
+      type: object
+      required: [entryId, lineId, occurredOn, payee, accounts, amountMinor, reverses, reversedBy, replaces]
+      properties:
+        entryId: { $ref: '#/components/schemas/Uuid' }
+        lineId: { $ref: '#/components/schemas/Uuid' }
+        occurredOn: { $ref: '#/components/schemas/CalendarDate' }
+        payee: { type: [string, 'null'] }
+        accounts:
+          type: array
+          items: { $ref: '#/components/schemas/FundingAccount' }
+        amountMinor: { $ref: '#/components/schemas/MinorUnits' }
+        reverses:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+        reversedBy:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+        replaces:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+
+    CategoryLines:
+      type: object
+      required: [ledgerAccountId, from, to, lines]
+      properties:
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        from: { $ref: '#/components/schemas/CalendarDate' }
+        to: { $ref: '#/components/schemas/CalendarDate' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/CategoryLine' }
+
+    Project:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+
+    CreateProjectRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+
+    UpdateProjectRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+
+    ProjectSummary:
+      allOf:
+        - $ref: '#/components/schemas/Project'
+        - type: object
+          required: [netCostMinor, transactionCount, firstActivityOn, lastActivityOn]
+          properties:
+            netCostMinor:
+              allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+              description: Raw signed sum of the project's lines, no display sign.
+            transactionCount: { type: integer, minimum: 0 }
+            firstActivityOn:
+              oneOf: [{ $ref: '#/components/schemas/CalendarDate' }, { type: 'null' }]
+            lastActivityOn:
+              oneOf: [{ $ref: '#/components/schemas/CalendarDate' }, { type: 'null' }]
+
+    ProjectLine:
+      type: object
+      required:
+        [entryId, lineId, occurredOn, payee, ledgerAccountId, categoryName,
+         accounts, amountMinor, entryTotalMinor, reverses, reversedBy, replaces]
+      properties:
+        entryId: { $ref: '#/components/schemas/Uuid' }
+        lineId: { $ref: '#/components/schemas/Uuid' }
+        occurredOn: { $ref: '#/components/schemas/CalendarDate' }
+        payee: { type: [string, 'null'] }
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        categoryName: { type: string }
+        accounts:
+          type: array
+          items: { $ref: '#/components/schemas/FundingAccount' }
+        amountMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Raw signed, so a refund reads negative and the lines add to the net cost.
+        entryTotalMinor:
+          oneOf: [{ $ref: '#/components/schemas/MinorUnits' }, { type: 'null' }]
+          description: |
+            Set when the line is one of several income or expense lines in its
+            entry — a split — and is the sum of those lines in the same
+            orientation: 200.00 of 230.00. Null for an unsplit line.
+        reverses:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+        reversedBy:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+        replaces:
+          oneOf: [{ $ref: '#/components/schemas/EntryRef' }, { type: 'null' }]
+
+    ProjectReport:
+      type: object
+      required: [project, from, to, months, categories, lines, linesTruncated]
+      properties:
+        project: { $ref: '#/components/schemas/ProjectSummary' }
+        from: { $ref: '#/components/schemas/CalendarDate' }
+        to: { $ref: '#/components/schemas/CalendarDate' }
+        months:
+          type: array
+          items: { $ref: '#/components/schemas/MonthSpending' }
+        categories:
+          type: array
+          description: Totals the whole period rather than one month.
+          items: { $ref: '#/components/schemas/CategoryTotal' }
+        lines:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/ProjectLine' }
+        linesTruncated: { type: boolean }
+
+    SpendingReportRequest:
+      type: object
+      required: [from, to]
+      properties:
+        from: { $ref: '#/components/schemas/CalendarDate' }
+        to: { $ref: '#/components/schemas/CalendarDate' }
+        projectId: { $ref: '#/components/schemas/Uuid' }
+        grouping: { type: string, enum: [name, meaning], default: name }
+
+    PayeeTotal:
+      type: object
+      description: One normalised payee and the SQL sums behind it.
+      required: [payee, totalMinor, transactionCount, categories]
+      properties:
+        payee: { type: string }
+        totalMinor: { $ref: '#/components/schemas/MinorUnits' }
+        transactionCount: { type: integer, minimum: 1 }
+        categories:
+          type: array
+          minItems: 1
+          description: Every expense category the payee was booked to in the period.
+          items: { type: string }
+
+    NameGroup:
+      allOf:
+        - $ref: '#/components/schemas/PayeeTotal'
+        - type: object
+          required: [isLargest]
+          properties:
+            isLargest:
+              type: boolean
+              description: |
+                Marked here rather than compared in the browser, which never sees
+                the figures as numbers. At most one group carries it.
+
+    MeaningGroup:
+      type: object
+      required: [label, origin, totalMinor, isLargest, payees]
+      properties:
+        label:
+          type: string
+          description: Model-authored. Renders as plain text, never interpreted.
+        origin:
+          type: string
+          enum: [model, other]
+          description: |
+            `other` collects the ungrouped payees, always sorts last regardless
+            of size, and is never `isLargest` — it is a remainder, not a kind of
+            spending.
+        totalMinor: { $ref: '#/components/schemas/MinorUnits' }
+        isLargest: { type: boolean }
+        payees:
+          type: array
+          minItems: 1
+          description: What makes the grouping inspectable. Every figure in it is a SQL sum.
+          items: { $ref: '#/components/schemas/PayeeTotal' }
+
+    SentPayload:
+      type: object
+      description: The payload viewer's source — what left the process, and when.
+      required: [names, at]
+      properties:
+        names:
+          type: array
+          items: { type: string }
+        at: { $ref: '#/components/schemas/Timestamp' }
+
+    SpendingReport:
+      description: |
+        A union rather than one shape with optional halves, so a degraded report
+        cannot carry a label, a member list or a sent payload.
+      oneOf:
+        - type: object
+          required: [from, to, totalMinor, grouping, groups, fallback]
+          properties:
+            from: { $ref: '#/components/schemas/CalendarDate' }
+            to: { $ref: '#/components/schemas/CalendarDate' }
+            totalMinor:
+              allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+              description: The API's own figure, never the sum of `groups`.
+            grouping: { const: name }
+            groups:
+              type: array
+              items: { $ref: '#/components/schemas/NameGroup' }
+            fallback:
+              description: Why `meaning` was not delivered. Null when `name` was asked for.
+              oneOf:
+                - type: string
+                  enum: [no-key, not-consented, provider-failed, unreconciled]
+                - type: 'null'
+        - type: object
+          required: [from, to, totalMinor, grouping, groups, sent]
+          properties:
+            from: { $ref: '#/components/schemas/CalendarDate' }
+            to: { $ref: '#/components/schemas/CalendarDate' }
+            totalMinor: { $ref: '#/components/schemas/MinorUnits' }
+            grouping: { const: meaning }
+            groups:
+              type: array
+              items: { $ref: '#/components/schemas/MeaningGroup' }
+            sent: { $ref: '#/components/schemas/SentPayload' }
+
+    InsightsSettings:
+      type: object
+      required: [semanticAvailable, enabled]
+      properties:
+        semanticAvailable:
+          type: boolean
+          description: Whether the server has a key.
+        enabled:
+          type: boolean
+          description: This owner's consent. Revocable, and what gates every send.
+
+    RepeatRule:
+      description: Four shapes and no more. Strict — an unknown key is a 400.
+      oneOf:
+        - type: object
+          required: [frequency]
+          additionalProperties: false
+          properties:
+            frequency: { type: string, enum: [one-off, weekly, biweekly] }
+        - type: object
+          required: [frequency, dayOfMonth]
+          additionalProperties: false
+          properties:
+            frequency: { const: monthly }
+            dayOfMonth:
+              type: integer
+              minimum: 1
+              maximum: 31
+              description: |
+                The anchor day. A day past the end of a shorter month lands on
+                that month's last day — which is why it is stored rather than
+                derived, so a series anchored on the 31st still reads "monthly on
+                the 31st" in the month it fell on the 28th.
+
+    RecurringSeries:
+      type: object
+      required: [id, payee, amountMinor, ledgerAccountId, categoryId, rule, firstDueOn, endsOn, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        payee: { type: string, minLength: 1, maxLength: 120 }
+        amountMinor: { $ref: '#/components/schemas/MinorUnits' }
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        categoryId: { $ref: '#/components/schemas/Uuid' }
+        rule: { $ref: '#/components/schemas/RepeatRule' }
+        firstDueOn: { $ref: '#/components/schemas/CalendarDate' }
+        endsOn:
+          oneOf: [{ $ref: '#/components/schemas/CalendarDate' }, { type: 'null' }]
+          description: Null is "until further notice" — no horizon, not an infinite row count.
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+
+    CreateRecurringSeriesRequest:
+      type: object
+      required: [payee, amountMinor, ledgerAccountId, categoryId, rule, firstDueOn]
+      properties:
+        payee: { type: string, minLength: 1, maxLength: 120 }
+        amountMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Must not be zero. Signed on the account side, so a bill is negative.
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        categoryId: { $ref: '#/components/schemas/Uuid' }
+        rule: { $ref: '#/components/schemas/RepeatRule' }
+        firstDueOn:
+          allOf: [{ $ref: '#/components/schemas/CalendarDate' }]
+          description: At most 31 days in the past, and must fall on a monthly rule's anchor day.
+        endsOn:
+          oneOf: [{ $ref: '#/components/schemas/CalendarDate' }, { type: 'null' }]
+          default: null
+          description: On or after `firstDueOn`.
+
+    ScheduledOccurrence:
+      type: object
+      required: [id, seriesId, dueOn, amountMinor, materializedEntryId]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        seriesId: { $ref: '#/components/schemas/Uuid' }
+        dueOn: { $ref: '#/components/schemas/CalendarDate' }
+        amountMinor: { $ref: '#/components/schemas/MinorUnits' }
+        materializedEntryId:
+          oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
+          description: The only thing that ever takes an occurrence out of the projection.
+
+    ScheduledOccurrenceView:
+      type: object
+      description: |
+        One row of the bills list. No `materializedEntryId` — a materialised
+        occurrence is a transaction and belongs to the register, so it never
+        appears in a group here, and a field that could only ever be null would
+        say otherwise.
+      required: [id, seriesId, dueOn, amountMinor, payee, rule, ledgerAccountId, ledgerAccountName, categoryId, categoryName]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        seriesId: { $ref: '#/components/schemas/Uuid' }
+        dueOn: { $ref: '#/components/schemas/CalendarDate' }
+        amountMinor: { $ref: '#/components/schemas/MinorUnits' }
+        payee: { type: string }
+        rule: { $ref: '#/components/schemas/RepeatRule' }
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+        ledgerAccountName: { type: string }
+        categoryId: { $ref: '#/components/schemas/Uuid' }
+        categoryName: { type: string }
+
+    PayOccurrenceRequest:
+      type: object
+      required: [paidOn, amountMinor, ledgerAccountId]
+      properties:
+        paidOn: { $ref: '#/components/schemas/CalendarDate' }
+        amountMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Must not be zero. Account-side sign, so paying more than scheduled is more negative.
+        ledgerAccountId: { $ref: '#/components/schemas/Uuid' }
+
+    PayOccurrenceResponse:
+      type: object
+      required: [occurrence, entry]
+      properties:
+        occurrence: { $ref: '#/components/schemas/ScheduledOccurrence' }
+        entry: { $ref: '#/components/schemas/Entry' }
+
+    ProjectionPoint:
+      type: object
+      required: [on, netWorthMinor, basis]
+      properties:
+        on: { $ref: '#/components/schemas/CalendarDate' }
+        netWorthMinor: { $ref: '#/components/schemas/MinorUnits' }
+        basis:
+          type: string
+          enum: [actual, projected]
+          description: |
+            The solid and dashed segments. Marked by the API so the client draws
+            the boundary rather than deciding where it is.
+
+    OccurrenceGroup:
+      type: object
+      required: [netMinor, occurrences]
+      properties:
+        netMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: The API's own figure, not the sum of `occurrences`.
+        occurrences:
+          type: array
+          items: { $ref: '#/components/schemas/ScheduledOccurrenceView' }
+
+    ProjectionResponse:
+      type: object
+      required: [asOf, to, netWorthMinor, projectedNetWorthMinor, series, overdue, scheduled]
+      properties:
+        asOf:
+          allOf: [{ $ref: '#/components/schemas/CalendarDate' }]
+          description: The server's today, resolved per request — where `actual` becomes `projected`.
+        to: { $ref: '#/components/schemas/CalendarDate' }
+        netWorthMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Today's, and the same number the balances panel shows.
+        projectedNetWorthMinor:
+          allOf: [{ $ref: '#/components/schemas/MinorUnits' }]
+          description: Today's figure carried to `to`. Excludes `overdue`.
+        series:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectionPoint' }
+        overdue:
+          allOf: [{ $ref: '#/components/schemas/OccurrenceGroup' }]
+          description: Due before today and never materialised. Not in `projectedNetWorthMinor`.
+        scheduled:
+          allOf: [{ $ref: '#/components/schemas/OccurrenceGroup' }]
+          description: Due between `asOf` and `to` inclusive, carrying no `materializedEntryId`.

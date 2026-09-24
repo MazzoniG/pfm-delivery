@@ -1,0 +1,9 @@
+{
+  "extends": "@pfm/config/tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["src", "prisma.config.ts", "prisma/seed.ts", "prisma/seed"]
+}

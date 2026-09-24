@@ -1,0 +1,221 @@
+// Prisma 7 removed `url` from the datasource block — the connection string
+// lives in prisma.config.ts for the CLI and reaches the client via a driver
+// adapter. See docs/DECISIONS.md ADR-003.
+//
+// Prisma owns tables, columns and indexes. It has no representation for the
+// zero-sum, lock and audit triggers, which live in the migration SQL and are
+// the invariants this model is only half of.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LedgerAccountKind {
+  asset
+  liability
+  equity
+  income
+  expense
+
+  @@map("ledger_account_kind")
+}
+
+/// Four shapes and no more. No `interval` field: an open interval would admit a
+/// fifth shape by arithmetic, and biweekly is its own value for that reason.
+enum RecurrenceFrequency {
+  oneOff   @map("one-off")
+  weekly
+  biweekly
+  monthly
+
+  @@map("recurrence_frequency")
+}
+
+model User {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  displayName String   @map("display_name")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  /// When this owner agreed that merchant names may be sent to a model. NULL
+  /// means never, or withdrawn, and nothing is sent while it is NULL.
+  semanticGroupingConsentedAt DateTime? @map("semantic_grouping_consented_at") @db.Timestamptz(6)
+
+  ledgerAccounts LedgerAccount[]
+  entries        Entry[]
+  projects       Project[]
+  recurring      RecurringSeries[]
+
+  @@map("users")
+}
+
+/// Accounts and categories are the two sides of an entry and live in one table,
+/// discriminated by `kind`. A query that does not constrain `kind` is a bug.
+model LedgerAccount {
+  id         String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerId    String            @map("owner_id") @db.Uuid
+  name       String
+  kind       LedgerAccountKind
+  currency   String            @default("USD") @db.Char(3)
+  isSystem   Boolean           @default(false) @map("is_system")
+  archivedAt DateTime?         @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  owner             User              @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  lines             EntryLine[]
+  fundedSeries      RecurringSeries[] @relation("SeriesAccount")
+  categorisedSeries RecurringSeries[] @relation("SeriesCategory")
+
+  // Name uniqueness is a partial unique index — live names only, so an archived
+  // name can be reused. Prisma cannot express the filter; see the migration.
+  @@index([ownerId, kind])
+  @@map("ledger_accounts")
+}
+
+model Project {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  owner User        @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  lines EntryLine[]
+
+  @@unique([ownerId, name])
+  @@map("projects")
+}
+
+/// An entry has no status column. "Reversed" is a fact about the graph: an
+/// entry is reversed when another entry's `reversesEntryId` points at it, which
+/// is `reversedBy` below. Nothing has to be kept in step, so nothing can drift.
+model Entry {
+  id              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerId         String    @map("owner_id") @db.Uuid
+  occurredOn      DateTime  @map("occurred_on") @db.Date
+  description     String?
+  payee           String?
+  memo            String?
+  /// Set by reconciling, and by nothing else. Non-null means correction-only.
+  lockedAt        DateTime? @map("locked_at") @db.Timestamptz(6)
+  reversesEntryId String?   @map("reverses_entry_id") @db.Uuid
+  replacesEntryId String?   @map("replaces_entry_id") @db.Uuid
+  /// When we learned of the entry, as against when it occurred.
+  recordedAt      DateTime  @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  owner        User                  @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  lines        EntryLine[]
+  reverses     Entry?                @relation("EntryReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversedBy   Entry[]               @relation("EntryReversal")
+  replaces     Entry?                @relation("EntryReplacement", fields: [replacesEntryId], references: [id], onDelete: Restrict)
+  replacedBy   Entry[]               @relation("EntryReplacement")
+  /// At most one, enforced by a partial unique index Prisma cannot express.
+  materialises ScheduledOccurrence[]
+
+  // `reversesEntryId` is unique where not null — an entry is reversed at most
+  // once. Prisma cannot express a partial unique index; the migration declares
+  // `entries_reverses_entry_id_key`, which also serves `reversedBy` lookups.
+  @@index([ownerId, occurredOn(sort: Desc), id(sort: Desc)])
+  @@index([replacesEntryId])
+  @@map("entries")
+}
+
+/// No `owner_id`: a line inherits scope from its entry, and a second copy is a
+/// consistency risk for no gain. Joins reach the owner through `entries`.
+model EntryLine {
+  id                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  entryId               String    @map("entry_id") @db.Uuid
+  ledgerAccountId       String    @map("ledger_account_id") @db.Uuid
+  amountMinor           BigInt    @map("amount_minor")
+  projectId             String?   @map("project_id") @db.Uuid
+  excludedFromReporting Boolean   @default(false) @map("excluded_from_reporting")
+  reconciledAt          DateTime? @map("reconciled_at") @db.Timestamptz(6)
+
+  entry         Entry         @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  ledgerAccount LedgerAccount @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  project       Project?      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([entryId])
+  @@index([ledgerAccountId, entryId])
+  @@map("entry_lines")
+}
+
+/// A schedule, not a ledger. Nothing in this model or the next reaches
+/// `entry_lines`, and `ScheduledOccurrence.materializedEntryId` is the only
+/// reference either of them makes into the ledger at all.
+///
+/// `amountMinor` is the signed amount that will be posted to `ledgerAccountId`;
+/// `categoryId` takes its negation when the bill is paid. Both FKs point at
+/// `ledger_accounts` and neither can be constrained to a `kind` in the schema —
+/// the service holds the account to `asset | liability` and the category to
+/// `income | expense`, as it does for an entry's lines.
+model RecurringSeries {
+  id                  String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerId             String              @map("owner_id") @db.Uuid
+  payee               String
+  amountMinor         BigInt              @map("amount_minor")
+  ledgerAccountId     String              @map("ledger_account_id") @db.Uuid
+  categoryId          String              @map("category_id") @db.Uuid
+  frequency           RecurrenceFrequency
+  /// Set for `monthly` and null for every other frequency, by CHECK constraint.
+  dayOfMonth          Int?                @map("day_of_month") @db.SmallInt
+  firstDueOn          DateTime            @map("first_due_on") @db.Date
+  endsOn              DateTime?           @map("ends_on") @db.Date
+  /// The expansion watermark: occurrences exist up to here and no further.
+  materializedThrough DateTime?           @map("materialized_through") @db.Date
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  owner         User                  @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  ledgerAccount LedgerAccount         @relation("SeriesAccount", fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  category      LedgerAccount         @relation("SeriesCategory", fields: [categoryId], references: [id], onDelete: Restrict)
+  occurrences   ScheduledOccurrence[]
+
+  @@index([ownerId])
+  @@map("recurring_series")
+}
+
+/// No `owner_id`: an occurrence inherits scope from its series, the same
+/// reasoning that keeps it off `entry_lines`. Owner-scoped queries join through
+/// `recurring_series`.
+///
+/// `materializedEntryId` is the hinge of the whole story. While it is null the
+/// occurrence counts in the projection and in nothing else; once set, the
+/// occurrence drops out and the entry it names is what the balance sees. The FK
+/// is ON DELETE SET NULL, so deleting that entry returns the bill to the
+/// projection — see the migration.
+model ScheduledOccurrence {
+  id                  String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  seriesId            String   @map("series_id") @db.Uuid
+  dueOn               DateTime @map("due_on") @db.Date
+  amountMinor         BigInt   @map("amount_minor")
+  materializedEntryId String?  @map("materialized_entry_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  series            RecurringSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  materializedEntry Entry?          @relation(fields: [materializedEntryId], references: [id], onDelete: SetNull)
+
+  // The projection's own index — unmaterialised occurrences by date — is
+  // partial, and uniqueness on `materializedEntryId` is too. Prisma expresses
+  // neither; both are declared in the migration.
+  @@unique([seriesId, dueOn])
+  @@map("scheduled_occurrences")
+}
+
+/// A log of record, not a scoped table: no `owner_id`, and no FK on `entryId`.
+/// See the migration comment and docs/ARCHITECTURE.md §4.
+model EntryAuditLog {
+  id          BigInt   @id @default(autoincrement())
+  entryId     String   @map("entry_id") @db.Uuid
+  /// `entries` or `entry_lines` — which table the row in `before`/`after` is from.
+  sourceTable String   @map("source_table")
+  action      String
+  actorId     String?  @map("actor_id") @db.Uuid
+  changedAt   DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+  before      Json?
+  after       Json?
+
+  @@index([entryId, changedAt])
+  @@map("entry_audit_log")
+}

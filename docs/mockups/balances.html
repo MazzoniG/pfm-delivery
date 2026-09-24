@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Balances — mock-up</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+
+    --ink: #17302a;
+    --ink-2: #4e625b;
+    --ink-3: #7c8c86;
+    --paper: #eef3ef;
+    --surface: #ffffff;
+    --rule: #dde7e0;
+    --rule-strong: #b9ccbf;
+    --money-rule: #c9a9a4;
+    --accent: #1f5e4a;
+    --accent-hover: #184c3c;
+    --accent-soft: #e2eee7;
+    --inflow: #1d6e4e;
+    --error: #a4271f;
+    --error-soft: #fbedeb;
+    --lock: #7a6424;
+    --lock-soft: #f6f0dc;
+    --note-bg: #f4f6f9;
+    --note-rule: #aab6c6;
+    --scrim: rgba(23, 48, 42, 0.38);
+
+    --ui: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --num: "Source Serif 4", Georgia, "Times New Roman", serif;
+
+    --r-sm: 4px;
+    --r-md: 8px;
+    --r-lg: 12px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: var(--ui);
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink);
+    background: var(--paper);
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* ---------- spec page frame ---------- */
+  .page { max-width: 1440px; margin: 0 auto; padding: 40px 32px 80px; }
+  .page-head { max-width: 68ch; margin-bottom: 40px; }
+  .page-head h1 {
+    font-family: var(--num); font-weight: 600;
+    font-size: 30px; line-height: 1.2; margin: 0 0 10px;
+  }
+  .page-head p { margin: 0; color: var(--ink-2); }
+
+  .board { margin-bottom: 56px; }
+  .board-head { max-width: 72ch; margin-bottom: 14px; }
+  .board-head h2 { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+  .board-head p { margin: 0; color: var(--ink-2); font-size: 14px; }
+  .board-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 20px;
+    align-items: start;
+  }
+  .stage { overflow-x: auto; border-radius: var(--r-lg); }
+  .notes {
+    background: var(--note-bg);
+    border-left: 3px solid var(--note-rule);
+    border-radius: var(--r-sm);
+    padding: 16px 18px;
+    font-size: 13.5px;
+    color: var(--ink-2);
+  }
+  .notes h3 { font-size: 13.5px; font-weight: 700; color: var(--ink); margin: 0 0 10px; }
+  .notes ol { margin: 0; padding: 0; list-style: none; counter-reset: n; }
+  .notes li { counter-increment: n; position: relative; padding-left: 28px; margin-bottom: 10px; }
+  .notes li:last-child { margin-bottom: 0; }
+  .notes li::before {
+    content: counter(n);
+    position: absolute; left: 0; top: 1px;
+    width: 19px; height: 19px; border-radius: 50%;
+    background: var(--note-rule); color: #fff;
+    font-size: 11px; font-weight: 700; line-height: 19px; text-align: center;
+  }
+  .notes code { font-size: 12.5px; background: #e6eaf0; padding: 0 4px; border-radius: 3px; }
+  .pin {
+    display: inline-block; vertical-align: middle;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: var(--note-rule); color: #fff;
+    font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center;
+    margin-left: 6px; flex: none;
+  }
+
+  /* ---------- app shell ---------- */
+  .app {
+    min-width: 980px;
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    background: var(--surface);
+    border: 1px solid var(--rule-strong);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+  }
+  .side {
+    background: #f7faf8;
+    border-right: 1px solid var(--rule);
+    padding: 20px 14px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .brand { font-family: var(--num); font-size: 20px; font-weight: 600; padding: 0 8px; }
+  .side-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px;
+  }
+  .side-head h2 { font-size: 13px; font-weight: 700; margin: 0; color: var(--ink-2); }
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: var(--r-sm);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+  }
+  .icon-btn:hover { background: var(--accent-soft); }
+  .acct-group { display: flex; flex-direction: column; gap: 2px; }
+  .acct-group h3 { font-size: 12.5px; font-weight: 600; color: var(--ink-3); margin: 0 0 4px; padding: 0 8px; }
+  .acct {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px; border-radius: var(--r-sm);
+    font-size: 14.5px; text-align: left; background: none; border: 0; width: 100%;
+  }
+  .acct:hover { background: var(--accent-soft); }
+  .acct[aria-current="page"] { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 600; }
+
+  .main { padding: 22px 26px 26px; min-width: 0; }
+  .url {
+    font-size: 12.5px; color: var(--ink-2);
+    background: var(--note-bg); border: 1px dashed var(--note-rule);
+    border-radius: var(--r-sm); padding: 5px 10px; margin-bottom: 18px;
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  }
+  .url b { color: var(--ink); font-weight: 600; }
+  .main-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+    margin-bottom: 16px;
+  }
+  .main-head h1 { font-family: var(--num); font-size: 26px; font-weight: 600; margin: 0; line-height: 1.2; }
+  .main-head .sub { color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+  .balance-slot {
+    min-width: 150px; min-height: 44px;
+    border: 1px dashed var(--note-rule); border-radius: var(--r-sm);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-3); font-size: 12px; padding: 4px 10px; text-align: center;
+  }
+  .head-right { display: flex; align-items: center; gap: 10px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 36px; padding: 0 14px; border-radius: var(--r-md);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+    font-size: 14px; font-weight: 600; white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent-soft); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+
+  .filters { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .field-inline {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 12px; border-radius: var(--r-md);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+    font-size: 14px; color: var(--ink);
+  }
+  .field-inline.search { min-width: 240px; color: var(--ink-3); }
+
+  /* ---------- the ledger ---------- */
+  .ledger { width: 100%; border-collapse: collapse; }
+  .ledger th {
+    text-align: left; font-size: 12.5px; font-weight: 600; color: var(--ink-3);
+    padding: 8px 10px; border-bottom: 1px solid var(--rule-strong);
+  }
+  .ledger td {
+    padding: 11px 10px; border-bottom: 1px solid var(--rule);
+    font-size: 14.5px; vertical-align: middle;
+  }
+  .ledger .c-day { width: 56px; font-family: var(--num); font-size: 16px; color: var(--ink-2); font-variant-numeric: tabular-nums lining-nums; }
+  .ledger .c-status { width: 34px; text-align: center; }
+  .ledger .c-amt {
+    width: 150px; text-align: right;
+    font-family: var(--num); font-size: 16px;
+    font-variant-numeric: tabular-nums lining-nums;
+    border-left: 3px double var(--money-rule);
+  }
+  .ledger th.c-amt, .ledger th.c-day { font-family: var(--ui); font-size: 12.5px; color: var(--ink-3); }
+  .amt-in { color: var(--inflow); }
+  .month td {
+    padding: 22px 10px 8px;
+    font-family: var(--num); font-size: 17px; font-weight: 600;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  .month .month-note { font-family: var(--ui); font-size: 12.5px; font-weight: 500; color: var(--lock); margin-left: 10px; }
+  .payee { font-weight: 500; }
+  .cat { color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+  .split-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--accent-soft); color: var(--accent);
+    border: 0; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600;
+  }
+  .split-btn:hover { background: #d2e6da; }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 600;
+    border-radius: 999px; padding: 1px 8px; margin-left: 8px; vertical-align: 1px;
+  }
+  .badge-correction { background: var(--accent-soft); color: var(--accent); }
+  .badge-reversed { background: var(--lock-soft); color: var(--lock); }
+  .badge a { color: inherit; }
+  tr.reconciled td { background: #fbfcf9; }
+  .lock { color: var(--lock); }
+
+  .more { display: flex; justify-content: center; padding-top: 18px; }
+
+  /* ---------- modal + drawer staging ---------- */
+  .scrim {
+    min-width: 760px; background: var(--scrim); border-radius: var(--r-lg);
+    padding: 40px; display: flex; justify-content: center; align-items: flex-start;
+  }
+  .scrim.right { justify-content: flex-end; padding: 0; min-height: 520px; }
+  .dialog {
+    width: 520px; background: var(--surface);
+    border-radius: var(--r-lg); box-shadow: 0 18px 50px rgba(23, 48, 42, 0.28);
+  }
+  .dialog-head { padding: 20px 24px 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .dialog-head h2 { font-family: var(--num); font-size: 21px; font-weight: 600; margin: 0; line-height: 1.25; }
+  .dialog-body { padding: 16px 24px; }
+  .dialog-body p { margin: 0 0 14px; color: var(--ink-2); max-width: 60ch; }
+  .dialog-foot {
+    padding: 14px 24px 20px; display: flex; justify-content: flex-end; gap: 10px;
+    border-top: 1px solid var(--rule); margin-top: 4px;
+  }
+
+  .tabs {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    background: var(--paper); border-radius: var(--r-md); padding: 3px; margin-bottom: 18px;
+  }
+  .tab { border: 0; background: none; border-radius: 6px; height: 34px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+  .tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(23, 48, 42, 0.14); }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 14px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .field { position: relative; }
+  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+  .field .hint { font-size: 12.5px; color: var(--ink-3); margin-top: 4px; }
+  .input {
+    height: 38px; width: 100%; border-radius: var(--r-md);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+    padding: 0 12px; display: flex; align-items: center; justify-content: space-between;
+    font-size: 14.5px;
+  }
+  .input.money { font-family: var(--num); font-size: 16px; font-variant-numeric: tabular-nums lining-nums; justify-content: flex-start; gap: 6px; }
+  .input.open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .input .placeholder { color: var(--ink-3); }
+  .field.invalid .input { border-color: var(--error); }
+  .field .error { font-size: 12.5px; color: var(--error); margin-top: 4px; }
+  .listbox {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 2;
+    margin-top: 6px; border: 1px solid var(--rule-strong); border-radius: var(--r-md);
+    background: var(--surface); padding: 6px; box-shadow: 0 10px 30px rgba(23, 48, 42, 0.12);
+  }
+  .listbox h4 { font-size: 12px; font-weight: 600; color: var(--ink-3); margin: 6px 8px 4px; }
+  .option { padding: 6px 8px; border-radius: var(--r-sm); font-size: 14px; }
+  .option[aria-selected="true"] { background: var(--accent-soft); font-weight: 600; }
+
+  .callout {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: var(--lock-soft); border-radius: var(--r-md);
+    padding: 12px 14px; margin-bottom: 16px; font-size: 14px; color: #5a4a1a;
+  }
+
+  .drawer {
+    width: 420px; background: var(--surface); min-height: 520px;
+    border-radius: 0 var(--r-lg) var(--r-lg) 0; box-shadow: -18px 0 50px rgba(23, 48, 42, 0.22);
+    display: flex; flex-direction: column;
+  }
+  .drawer-head { padding: 22px 24px 16px; border-bottom: 1px solid var(--rule); }
+  .drawer-head h2 { font-family: var(--num); font-size: 21px; font-weight: 600; margin: 0 0 2px; }
+  .drawer-head .sub { color: var(--ink-2); font-size: 14px; }
+  .drawer-body { padding: 18px 24px; }
+  .drawer-body h3 { font-size: 13px; font-weight: 700; color: var(--ink-2); margin: 0 0 8px; }
+  .lines { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
+  .lines td { padding: 10px 0; border-bottom: 1px solid var(--rule); font-size: 14.5px; }
+  .lines .c-amt { text-align: right; font-family: var(--num); font-size: 16px; font-variant-numeric: tabular-nums lining-nums; }
+
+  /* ---------- states ---------- */
+  .states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .state {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    border-radius: var(--r-lg); padding: 18px 20px; min-height: 280px;
+    display: flex; flex-direction: column;
+  }
+  .state > h3 { font-size: 13px; font-weight: 700; color: var(--ink-3); margin: 0 0 14px; }
+  .state-center { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 10px; }
+  .state-center h4 { font-family: var(--num); font-size: 19px; font-weight: 600; margin: 0; }
+  .state-center p { margin: 0; color: var(--ink-2); font-size: 14px; max-width: 42ch; }
+  .problem {
+    font-size: 13.5px; background: var(--error-soft); color: var(--error);
+    border-radius: var(--r-sm); padding: 8px 10px; width: 100%;
+  }
+  .skeleton { border-bottom: 1px solid var(--rule); padding: 14px 0; display: grid; grid-template-columns: 32px 1fr 70px; gap: 14px; }
+  .bar { height: 11px; border-radius: 6px; background: linear-gradient(90deg, #e7eee9 25%, #f2f6f3 50%, #e7eee9 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+  .bar.short { width: 60%; }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) { .bar { animation: none; } }
+
+  @media (max-width: 1100px) {
+    .board-body { grid-template-columns: minmax(0, 1fr); }
+    .states { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .page { padding: 24px 16px 60px; }
+  }
+
+  /* ---------- balances additions ---------- */
+  .app.wide-side { grid-template-columns: 284px minmax(0, 1fr); }
+  .net { padding: 0 8px; }
+  .net-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .net-amount {
+    font-family: var(--num); font-size: 28px; font-weight: 600; line-height: 1.15;
+    font-variant-numeric: tabular-nums lining-nums; margin-top: 2px;
+  }
+  .net-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+  .net-sub.past { color: var(--accent); font-weight: 600; }
+  .asof-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; padding: 0 8px; }
+  .asof-row span { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+  .asof-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 10px; border-radius: var(--r-md);
+    border: 1px solid var(--rule-strong); background: var(--surface);
+    font-size: 13.5px; font-weight: 600; white-space: nowrap;
+  }
+  .asof-btn.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .asof-btn.past { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .group-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 0 8px; margin-bottom: 4px;
+  }
+  .group-head h3 { font-size: 12.5px; font-weight: 600; color: var(--ink-3); margin: 0; padding: 0; }
+  .group-head .sub-total { font-family: var(--num); font-size: 13.5px; color: var(--ink-3); font-variant-numeric: tabular-nums lining-nums; }
+  .acct { justify-content: space-between; }
+  .acct .bal { font-family: var(--num); font-size: 15px; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+  .acct[aria-current="page"] .bal { color: #fff; }
+  .owed { font-family: var(--ui); font-size: 11.5px; font-weight: 600; color: var(--ink-3); margin-left: 4px; }
+  .acct[aria-current="page"] .owed { color: #d6e6dd; }
+  .side-sep { border: 0; border-top: 1px solid var(--rule); margin: 0 8px; }
+
+  .balance {
+    text-align: right; min-width: 170px;
+  }
+  .balance .label { font-size: 12.5px; font-weight: 600; color: var(--ink-3); }
+  .balance .amount {
+    font-family: var(--num); font-size: 26px; font-weight: 600; line-height: 1.15;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  .balance .when { font-size: 12.5px; color: var(--ink-3); }
+  .balance .when.past { color: var(--accent); font-weight: 600; }
+
+  .banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    background: var(--accent-soft); border-radius: var(--r-md);
+    padding: 10px 14px; margin-bottom: 16px; font-size: 14px;
+  }
+  .banner p { margin: 0; }
+  .banner b { font-weight: 600; }
+
+  .omitted {
+    border: 1px dashed var(--note-rule); border-radius: var(--r-md);
+    background: var(--note-bg); color: var(--ink-2);
+    padding: 22px; text-align: center; font-size: 13.5px;
+  }
+
+  .popover {
+    width: 300px; background: var(--surface);
+    border: 1px solid var(--rule-strong); border-radius: var(--r-lg);
+    box-shadow: 0 14px 40px rgba(23, 48, 42, 0.18); padding: 14px;
+    margin: 8px 8px 0;
+  }
+  .quick { display: flex; gap: 8px; margin-bottom: 12px; }
+  .chip {
+    border: 1px solid var(--rule-strong); background: var(--surface);
+    border-radius: 999px; height: 30px; padding: 0 12px; font-size: 13px; font-weight: 600;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .cal-head b { font-family: var(--num); font-size: 16px; font-weight: 600; }
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+  .cal .dow { font-size: 11.5px; font-weight: 600; color: var(--ink-3); padding: 4px 0; }
+  .cal .d {
+    height: 34px; border: 0; background: none; border-radius: var(--r-sm);
+    font-family: var(--num); font-size: 14.5px; font-variant-numeric: tabular-nums lining-nums;
+  }
+  .cal .d:hover:not(:disabled) { background: var(--accent-soft); }
+  .cal .d.today { outline: 1.5px solid var(--accent); outline-offset: -2px; font-weight: 600; }
+  .cal .d:disabled { color: #c3ccc8; cursor: not-allowed; text-decoration: line-through; text-decoration-color: #d9e0dc; }
+  .cal .blank { height: 34px; }
+
+  .variants { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .variant {
+    background: var(--surface); border: 1px solid var(--rule-strong);
+    border-radius: var(--r-lg); padding: 18px 20px;
+  }
+  .variant > h3 { font-size: 13px; font-weight: 700; color: var(--ink-3); margin: 0 0 14px; }
+  .mini-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .mini-head h4 { font-family: var(--num); font-size: 21px; font-weight: 600; margin: 0; line-height: 1.2; }
+  .mini-head .sub { color: var(--ink-2); font-size: 13.5px; }
+  .mini-side { display: flex; flex-direction: column; gap: 2px; }
+  .bar.amt { width: 64px; height: 12px; }
+  .bar.amt-lg { width: 120px; height: 22px; border-radius: 6px; }
+  .inline-error {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--error-soft); color: var(--error); border-radius: var(--r-sm);
+    padding: 8px 10px; font-size: 13px; margin: 0 8px;
+  }
+  .inline-error button { border: 0; background: none; color: var(--error); font-weight: 700; padding: 0; text-decoration: underline; }
+  .dash { font-family: var(--num); color: var(--ink-3); }
+
+  @media (max-width: 1100px) { .variants { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="page-head">
+    <h1>Balances</h1>
+    <p>Target layout and states for account balances, now and at any past date. Builds on the register mock-up: same shell, same tokens. Numbered pins on each screen match the notes beside it; the notes are the rules the screen has to follow.</p>
+  </header>
+
+  <section class="board" aria-labelledby="b-today">
+    <div class="board-head">
+      <h2 id="b-today">Balances as of today</h2>
+      <p>The register from Phase 1 with its balance slot filled, and balances added to the sidebar. Nothing in the register rows changes.</p>
+    </div>
+    <div class="board-body">
+      <div class="stage">
+        <div class="app wide-side">
+          
+          <nav class="side" aria-label="Accounts">
+            <div class="brand">Ledger</div>
+            <div class="net">
+              <div class="net-label">Net worth <span class="pin" aria-hidden="true">1</span></div>
+              <div class="net-amount">16,350.00</div>
+              <div class="net-sub">As of today</div>
+            </div>
+            <div class="asof-row">
+              <span>Balances as of</span>
+              <button class="asof-btn " aria-haspopup="dialog"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="2.5" width="11" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 5.5h11M4.5 1v3M9.5 1v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg> Today <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+            </div>
+            
+            <hr class="side-sep">
+            <div class="side-head">
+              <h2>Accounts <span class="pin" aria-hidden="true">4</span></h2>
+              <button class="icon-btn" aria-label="Add account"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+            </div>
+            <div class="acct-group">
+              <div class="group-head"><h3>Banking</h3><span class="sub-total">17,150.00 <span class="pin" aria-hidden="true">2</span></span></div>
+              <button class="acct" aria-current="page"><span>Everyday Checking</span><span class="bal">4,850.00</span></button><button class="acct"><span>High-Yield Savings</span><span class="bal">12,300.00</span></button><button class="acct"><span>Cash</span><span class="bal">0.00 <span class="pin" aria-hidden="true">6</span></span></button>
+            </div>
+            <div class="acct-group">
+              <div class="group-head"><h3>Credit</h3><span class="sub-total">800.00 owed <span class="pin" aria-hidden="true">3</span></span></div>
+              <button class="acct"><span>Visa Credit Card</span><span class="bal">800.00<span class="owed">owed</span></span></button>
+            </div>
+          </nav>
+          <main class="main">
+            <div class="url" aria-label="Current URL"><span>/transactions?<b>account</b>=everyday-checking&amp;<b>range</b>=all&amp;<b>q</b>=</span><span class="pin" aria-hidden="true">7</span></div>
+            
+            <div class="main-head">
+              <div>
+                <h1>Everyday Checking</h1>
+                <div class="sub">Checking account</div>
+              </div>
+              <div class="head-right">
+                <div class="balance">
+                  <div class="label">Balance <span class="pin" aria-hidden="true">5</span></div>
+                  <div class="amount">4,850.00</div>
+                  <div class="when">As of today</div>
+                </div>
+                <button class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Add transaction</button>
+              </div>
+            </div>
+            
+            <div class="filters">
+              <div class="field-inline">All time <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></div>
+              <div class="field-inline search">
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m9.5 9.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                Search payee
+              </div>
+            </div>
+            
+            <table class="ledger">
+              <caption class="sr-only">Transactions in Everyday Checking</caption>
+              <thead><tr>
+                <th class="c-day" scope="col">Day</th><th scope="col">Payee</th><th scope="col">Category</th>
+                <th class="c-status" scope="col"><span class="sr-only">Status</span></th>
+                <th class="c-amt" scope="col">Amount, USD</th>
+              </tr></thead>
+              <tbody>
+                <tr class="month"><td colspan="5">September 2026</td></tr>
+                <tr><td class="c-day">20</td><td><span class="payee">Riverside Café</span><span class="badge badge-correction">Correction</span></td><td><span class="cat">Dining</span></td><td class="c-status"></td><td class="c-amt">−24.00</td></tr>
+                <tr><td class="c-day">20</td><td><span class="payee">Riverside Café</span><span class="badge badge-reversed"><a href="#">Reversal of Aug 14</a></span></td><td><span class="cat">Groceries</span></td><td class="c-status"></td><td class="c-amt amt-in">+24.00</td></tr>
+                <tr><td class="c-day">19</td><td><span class="payee">Corner Market</span></td><td><span class="cat">Groceries</span></td><td class="c-status"></td><td class="c-amt">−54.20</td></tr>
+                <tr><td class="c-day">18</td><td><span class="payee">Maple Street Hardware</span></td><td><button class="split-btn">Split</button></td><td class="c-status"></td><td class="c-amt">−230.00</td></tr>
+                <tr><td class="c-day">15</td><td><span class="payee">Transfer</span></td><td><span class="cat">High-Yield Savings</span></td><td class="c-status"></td><td class="c-amt">−500.00</td></tr>
+                <tr><td class="c-day">12</td><td><span class="payee">Acme Corp Payroll</span></td><td><span class="cat">Salary</span></td><td class="c-status"></td><td class="c-amt amt-in">+2,400.00</td></tr>
+                <tr><td class="c-day">03</td><td><span class="payee">City Power &amp; Light</span></td><td><span class="cat">Utilities</span></td><td class="c-status"></td><td class="c-amt">−88.14</td></tr>
+                <tr class="month"><td colspan="5">August 2026 <span class="month-note">Reconciled Sep 19</span></td></tr>
+                <tr class="reconciled"><td class="c-day">28</td><td><span class="payee">Northside Pharmacy</span></td><td><span class="cat">Health</span></td><td class="c-status"><svg class="lock" width="14" height="14" viewBox="0 0 14 14" role="img" aria-label="Reconciled"><rect x="2.5" y="6" width="9" height="6.5" rx="1.2" fill="currentColor"/><path d="M4.5 6V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></td><td class="c-amt">−32.10</td></tr>
+                <tr class="reconciled"><td class="c-day">14</td><td><span class="payee">Riverside Café</span><span class="badge badge-reversed">Reversed Sep 20</span></td><td><span class="cat">Groceries</span></td><td class="c-status"><svg class="lock" width="14" height="14" viewBox="0 0 14 14" role="img" aria-label="Reconciled"><rect x="2.5" y="6" width="9" height="6.5" rx="1.2" fill="currentColor"/><path d="M4.5 6V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></td><td class="c-amt">−24.00</td></tr>
+              </tbody>
+            </table>
+            <div class="more"><button class="btn">Load older transactions</button></div>
+          </main>
+        </div>
+      </div>
+      <aside class="notes" aria-label="Notes for balances as of today">
+        <h3>Rules for this screen</h3>
+        <ol>
+          <li>Every figure on this screen comes from one balances response: per account, per group, and net worth. The browser displays numbers; it never adds them. Net worth is computed by the API as the raw signed sum over asset and liability accounts, which needs no sign logic at all.</li>
+          <li>Group subtotals come from the same response. They are not the sum of the rows beneath them computed client-side.</li>
+          <li>A liability shows what is owed as a positive amount with an <b>owed</b> label. The API has already applied the display sign; the client never flips one.</li>
+          <li>Archived accounts stay hidden from this list, but their balances still count in the group subtotal and net worth. Hiding an account is presentation; its money is still real.</li>
+          <li>The header balance is the selected account's figure from the same response. Switching accounts does not trigger a second balance request.</li>
+          <li>An account with no transactions shows <code>0.00</code>, never a blank or a missing row.</li>
+          <li>No <code>asOf</code> in the URL means today. The client resolves today as the user's local date and always sends it to the API explicitly, so "today" is never the server's timezone.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <section class="board" aria-labelledby="b-picker">
+    <div class="board-head">
+      <h2 id="b-picker">Choosing a date</h2>
+      <p>The as-of control open. Only the sidebar is shown; the rest of the screen is unchanged until a date is chosen.</p>
+    </div>
+    <div class="board-body">
+      <div class="stage">
+        <div style="position:relative; min-height:640px"><div class="app wide-side" style="min-width:0; grid-template-columns: 284px; width: 286px">
+          
+          <nav class="side" aria-label="Accounts">
+            <div class="brand">Ledger</div>
+            <div class="net">
+              <div class="net-label">Net worth </div>
+              <div class="net-amount">16,350.00</div>
+              <div class="net-sub">As of today</div>
+            </div>
+            <div class="asof-row">
+              <span>Balances as of</span>
+              <button class="asof-btn active" aria-haspopup="dialog"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="2.5" width="11" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 5.5h11M4.5 1v3M9.5 1v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg> Today <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+            </div>
+            
+            <hr class="side-sep">
+            <div class="side-head">
+              <h2>Accounts</h2>
+              <button class="icon-btn" aria-label="Add account"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+            </div>
+            <div class="acct-group">
+              <div class="group-head"><h3>Banking</h3><span class="sub-total">17,150.00 </span></div>
+              <button class="acct" aria-current="page"><span>Everyday Checking</span><span class="bal">4,850.00</span></button><button class="acct"><span>High-Yield Savings</span><span class="bal">12,300.00</span></button><button class="acct"><span>Cash</span><span class="bal">0.00</span></button>
+            </div>
+            <div class="acct-group">
+              <div class="group-head"><h3>Credit</h3><span class="sub-total">800.00 owed </span></div>
+              <button class="acct"><span>Visa Credit Card</span><span class="bal">800.00<span class="owed">owed</span></span></button>
+            </div>
+          </nav>
+        </div><div class="popover" style="position:absolute; left:250px; top:96px; margin:0; z-index:3" role="dialog" aria-label="Choose a date">
+              <div class="quick">
+                <button class="chip" aria-pressed="true">Today</button>
+                <button class="chip" aria-pressed="false">End of last month</button> <span class="pin" aria-hidden="true">2</span>
+              </div>
+              <div class="cal-head">
+                <button class="icon-btn" aria-label="Previous month"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+                <b>September 2026</b>
+                <button class="icon-btn" aria-label="Next month" disabled style="opacity:.4"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m4.5 3 3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+              </div>
+              <div class="cal" role="grid" aria-label="September 2026">
+                <div class="dow">Mo</div><div class="dow">Tu</div><div class="dow">We</div><div class="dow">Th</div><div class="dow">Fr</div><div class="dow">Sa</div><div class="dow">Su</div>
+                <div class="blank"></div><button class="d">1</button><button class="d">2</button><button class="d">3</button><button class="d">4</button><button class="d">5</button><button class="d">6</button><button class="d">7</button><button class="d">8</button><button class="d">9</button><button class="d">10</button><button class="d">11</button><button class="d">12</button><button class="d">13</button><button class="d">14</button><button class="d">15</button><button class="d">16</button><button class="d">17</button><button class="d">18</button><button class="d">19</button><button class="d">20</button><button class="d today" aria-current="date">21</button><button class="d" disabled>22</button><button class="d" disabled>23</button><button class="d" disabled>24</button><button class="d" disabled>25</button><button class="d" disabled>26</button><button class="d" disabled>27</button><button class="d" disabled>28</button><button class="d" disabled>29</button><button class="d" disabled>30</button>
+              </div>
+              <div style="font-size:12.5px;color:var(--ink-3);margin-top:8px">Dates after today show a projection, not a balance. <span class="pin" aria-hidden="true">1</span></div>
+            </div></div>
+      </div>
+      <aside class="notes" aria-label="Notes for choosing a date">
+        <h3>Rules for this control</h3>
+        <ol>
+          <li>Dates after today are disabled, and so is navigating to next month. A balance on a future date is a projection, which belongs to bills and projection, not to this story.</li>
+          <li>Two quick picks only: Today, and End of last month, which is the date reconciliation works against. No other presets.</li>
+          <li>Choosing a date writes <code>asOf</code> to the URL. The query key derives from the URL, so the back button returns to the previous date and a shared link reproduces the view.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <section class="board" aria-labelledby="b-past">
+    <div class="board-head">
+      <h2 id="b-past">A past date selected</h2>
+      <p>After choosing End of last month. Register rows are unchanged and omitted here.</p>
+    </div>
+    <div class="board-body">
+      <div class="stage">
+        <div class="app wide-side">
+          
+          <nav class="side" aria-label="Accounts">
+            <div class="brand">Ledger</div>
+            <div class="net">
+              <div class="net-label">Net worth </div>
+              <div class="net-amount">14,482.34</div>
+              <div class="net-sub past">As of Aug 31, 2026</div>
+            </div>
+            <div class="asof-row">
+              <span>Balances as of</span>
+              <button class="asof-btn past" aria-haspopup="dialog"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="2.5" width="11" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 5.5h11M4.5 1v3M9.5 1v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg> Aug 31, 2026 <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+            </div>
+            
+            <hr class="side-sep">
+            <div class="side-head">
+              <h2>Accounts</h2>
+              <button class="icon-btn" aria-label="Add account"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+            </div>
+            <div class="acct-group">
+              <div class="group-head"><h3>Banking</h3><span class="sub-total">15,122.34 </span></div>
+              <button class="acct" aria-current="page"><span>Everyday Checking</span><span class="bal">3,322.34</span></button><button class="acct"><span>High-Yield Savings</span><span class="bal">11,800.00</span></button><button class="acct"><span>Cash</span><span class="bal">0.00</span></button>
+            </div>
+            <div class="acct-group">
+              <div class="group-head"><h3>Credit</h3><span class="sub-total">640.00 owed </span></div>
+              <button class="acct"><span>Visa Credit Card</span><span class="bal">640.00<span class="owed">owed</span></span></button>
+            </div>
+          </nav>
+          <main class="main">
+            <div class="url" aria-label="Current URL"><span>/transactions?<b>account</b>=everyday-checking&amp;<b>range</b>=all&amp;<b>q</b>=&amp;<b>asOf</b>=2026-08-31</span></div>
+            <div class="banner" role="status">
+              <p>Showing balances as of <b>Aug 31, 2026</b>. Transactions below are not filtered by this date. <span class="pin" aria-hidden="true">2</span></p>
+              <button class="btn">Back to today <span class="pin" aria-hidden="true">3</span></button>
+            </div>
+            
+            <div class="main-head">
+              <div>
+                <h1>Everyday Checking</h1>
+                <div class="sub">Checking account</div>
+              </div>
+              <div class="head-right">
+                <div class="balance">
+                  <div class="label">Balance <span class="pin" aria-hidden="true">1</span></div>
+                  <div class="amount">3,322.34</div>
+                  <div class="when past">As of Aug 31, 2026</div>
+                </div>
+                <button class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Add transaction</button>
+              </div>
+            </div>
+            
+            <div class="filters">
+              <div class="field-inline">All time <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></div>
+              <div class="field-inline search">
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m9.5 9.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                Search payee
+              </div>
+            </div>
+            <div class="omitted">Register rows as in the register mock-up, unaffected by the balance date.</div>
+          </main>
+        </div>
+      </div>
+      <aside class="notes" aria-label="Notes for a past date">
+        <h3>Rules for this state</h3>
+        <ol>
+          <li>A past date is never subtle. The banner, the as-of button, and every "as of" label switch to the past-date treatment together, so nobody mistakes last month's balance for today's.</li>
+          <li>The balance date changes balances only. The register keeps its own range filter, and the banner says so in plain words.</li>
+          <li>Back to today removes <code>asOf</code> from the URL rather than writing today's date into it. A link shared today and opened tomorrow then shows tomorrow's balance, which is what "today" meant.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <section class="board" aria-labelledby="b-states">
+    <div class="board-head">
+      <h2 id="b-states">Header variants and states</h2>
+      <p>How the balance slot and the sidebar figures render across account kinds and request states.</p>
+    </div>
+    <div class="board-body">
+      <div class="variants">
+        
+          <div class="variant">
+            <h3>Credit card <span class="pin" aria-hidden="true">1</span></h3>
+            <div class="mini-head">
+              <div><h4>Visa Credit Card</h4><div class="sub">Credit card</div></div>
+              <div class="balance">
+                <div class="label">Balance owed</div>
+                <div class="amount">800.00</div>
+                <div class="when">As of today</div>
+              </div>
+            </div>
+            
+          </div>
+        
+          <div class="variant">
+            <h3>Overdrawn <span class="pin" aria-hidden="true">2</span></h3>
+            <div class="mini-head">
+              <div><h4>Everyday Checking</h4><div class="sub">Checking account</div></div>
+              <div class="balance">
+                <div class="label">Balance</div>
+                <div class="amount">−120.00</div>
+                <div class="when">As of today</div>
+              </div>
+            </div>
+            
+          </div>
+        
+          <div class="variant">
+            <h3>Loading <span class="pin" aria-hidden="true">3</span></h3>
+            <div class="mini-head">
+              <div><h4>Everyday Checking</h4><div class="sub">Checking account</div></div>
+              <div class="balance">
+                <div class="label">Balance</div>
+                <div class="amount"><div class="bar amt-lg" style="margin-left:auto"></div></div>
+                <div class="when">As of today</div>
+              </div>
+            </div>
+            
+            <div style="margin-top:18px;border-top:1px solid var(--rule);padding-top:12px">
+              <div class="group-head" style="padding:0"><h3>Banking</h3><div class="bar amt"></div></div>
+              <div class="acct" style="padding-left:0;padding-right:0"><span>Everyday Checking</span><div class="bar amt"></div></div>
+              <div class="acct" style="padding-left:0;padding-right:0"><span>High-Yield Savings</span><div class="bar amt"></div></div>
+            </div>
+          </div>
+        
+          <div class="variant">
+            <h3>Balances unavailable <span class="pin" aria-hidden="true">4</span></h3>
+            <div class="mini-head">
+              <div><h4>Everyday Checking</h4><div class="sub">Checking account</div></div>
+              <div class="balance">
+                <div class="label">Balance</div>
+                <div class="amount"><span class="dash">—</span></div>
+                <div class="when">As of today</div>
+              </div>
+            </div>
+            
+            <div style="margin-top:18px;border-top:1px solid var(--rule);padding-top:12px">
+              <div class="inline-error" role="alert" style="margin:0 0 8px"><span>Balances didn't load. The database did not respond in time.</span><button>Try again</button></div>
+              <div class="acct" style="padding-left:0;padding-right:0"><span>Everyday Checking</span><span class="dash">—</span></div>
+              <div class="acct" style="padding-left:0;padding-right:0"><span>High-Yield Savings</span><span class="dash">—</span></div>
+            </div>
+          </div>
+      </div>
+      <aside class="notes" aria-label="Notes for variants and states">
+        <h3>Rules for these states</h3>
+        <ol>
+          <li>A liability's slot is labelled <b>Balance owed</b>, and the amount is shown as returned. Stored as <code>−80000</code>, displayed as <code>800.00</code>, because the API applied the display sign once in its mapper.</li>
+          <li>An overdrawn asset shows a minus sign in normal ink. Red is reserved for errors; a negative balance is information, not a failure.</li>
+          <li>Account names come from the account list and render immediately; balances are a separate request and shimmer in place. A slow balance query never delays the list.</li>
+          <li>If balances fail, the list and the register still work. Figures show a dash, and one inline message offers a retry. The message carries the <code>detail</code> from the <code>problem+json</code> body, the same rule as the register's error state.</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+</div>
+</body>
+</html>

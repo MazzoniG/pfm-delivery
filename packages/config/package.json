@@ -1,0 +1,11 @@
+{
+  "name": "@pfm/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": ["tsconfig.base.json", "prettier.config.js"],
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./prettier": "./prettier.config.js"
+  }
+}

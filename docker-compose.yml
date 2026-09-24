@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: pfm
+      POSTGRES_PASSWORD: pfm
+      POSTGRES_DB: pfm
+    volumes:
+      - pfm_pgdata_v18:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pfm -d pfm']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - '5432:5432'
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://pfm:pfm@db:5432/pfm?schema=public
+      PORT: '3000'
+      SEED_ON_START: 'true'
+      # Interpolated from the developer's own .env, and empty when there isn't
+      # one. Empty is a supported state: the insights report degrades to SQL.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      INSIGHTS_MODEL: ${INSIGHTS_MODEL:-claude-haiku-4-5}
+      # The cost ceiling, passed through too — a ceiling documented in
+      # .env.example but not deployed is not a ceiling.
+      INSIGHTS_TIMEOUT_MS: ${INSIGHTS_TIMEOUT_MS:-15000}
+      INSIGHTS_MAX_OUTPUT_TOKENS: ${INSIGHTS_MAX_OUTPUT_TOKENS:-2000}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'node -e "fetch(''http://localhost:3000/ready'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    ports:
+      - '3000:3000'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '8080:80'
+
+volumes:
+  pfm_pgdata_v18:
