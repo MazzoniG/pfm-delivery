@@ -1,4 +1,4 @@
-# Personal Finance Manager
+# Personal Finance Manager-
 
 Bank and credit-card accounts, their transactions, balances at any date,
 monthly expense reports, scheduled bills and income with a balance projection,
