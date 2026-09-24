@@ -1,0 +1,126 @@
+# Every job runs on every push and pull request, with no path filters.
+# packages/contracts is shared by both apps, so a filter that got the rule
+# slightly wrong would let a broken build pass. The suite is fast enough that
+# the saving is not worth a false green.
+#
+# No linter is configured. TypeScript strict mode with noUncheckedIndexedAccess
+# covers what a linter would catch here, and adding ESLint late would produce a
+# repo-wide formatting diff rather than findings.
+#
+# The four jobs are independent so one failure never hides another. No secrets:
+# the app must build and boot with no credentials at all.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 12.5.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # Both apps resolve @pfm/contracts through its dist/, which is gitignored.
+      - run: pnpm --filter @pfm/contracts build
+      - run: pnpm -r typecheck
+
+  # No Postgres service container: Testcontainers starts Postgres itself from
+  # the same pinned image, so CI runs the identical path as a local test run.
+  # A service container would mean CI and local behaving differently.
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 12.5.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pfm/contracts build
+      - run: pnpm -r test
+
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 12.5.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # Recursive runs are topological, so contracts builds before the apps.
+      - run: pnpm -r build
+
+  cold-start:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: docker compose up -d --build
+      - name: Wait for /ready
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/ready; then exit 0; fi
+            sleep 3
+          done
+          echo "::error::API not ready after 180s"
+          exit 1
+      - name: Assert endpoint shapes
+        run: |
+          set -euo pipefail
+          api=http://localhost:8080/api/v1
+
+          curl -fsS http://localhost:3000/ready \
+            | jq -e '.status == "ready" and .checks.database == "up"'
+
+          # Through nginx on :8080, so the web container and its proxy are
+          # exercised too. The seed must have run: an empty list fails.
+          accounts=$(curl -fsS "$api/accounts")
+          echo "$accounts" | jq -e '
+            type == "array" and length > 0
+            and all(.[]; (.id | type == "string")
+                         and (.kind == "asset" or .kind == "liability"))'
+
+          account_id=$(echo "$accounts" | jq -r '[.[] | select(.kind == "asset")][0].id')
+          curl -fsS "$api/entries?accountId=$account_id" | jq -e '
+            (.data | type == "array" and length > 0)
+            and has("nextCursor")'
+
+          curl -fsS "$api/insights/settings" \
+            | jq -e '.semanticAvailable == false'
+
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root"'
+      - name: Compose logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
